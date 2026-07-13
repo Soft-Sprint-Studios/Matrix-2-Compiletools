@@ -73,7 +73,7 @@ extern char* daystage_strings[RAD_NB_DAYSTAGES];
 #define DEFAULT_FADE                1.0
 #define DEFAULT_BOUNCE              8
 #define DEFAULT_DUMPPATCHES         false
-#define DEFAULT_BUMPMAPS            false
+#define DEFAULT_BUMPMAPS            true
 #define DEFAULT_NOCOMPRESS			false
 #define DEFAULT_COMPRESSION_LEVEL	COMPRESSION_LEVEL_DEFAULT
 #define DEFAULT_AMBIENT_RED         0.0
