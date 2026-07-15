@@ -133,6 +133,11 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <OutputFile>.\Release_x64\hlvis.bsc</OutputFile>
     </Bscmake>
+    <CustomBuildStep>
+      <Command>copy /Y "$(OutDir)$(TargetName)$(TargetExt)" "$(SolutionDir)../../../compile/$(TargetName)$(TargetExt)"</Command>
+      <Message>Copy '$(TargetName)$(TargetExt)' to directory '$(SolutionDir)../../../compile/$(TargetName)$(TargetExt)'</Message>
+      <Outputs>hlvis.exe</Outputs>
+    </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\common\blockmem.cpp" />
