@@ -64,7 +64,7 @@ entity_t*			g_face_texlights[MAX_MAP_FACES];
 unsigned			g_num_patches;
 bool				g_bumpmaps = DEFAULT_BUMPMAPS;
 bool				g_nocompress = DEFAULT_NOCOMPRESS;
-compressionlevel_t	g_compressionlevel = COMPRESSION_LEVEL_DEFAULT;
+compressionlevel_t	g_compressionlevel = COMPRESSION_LEVEL_UBER_COMPRESSION;
 
 static vec3_t   (*emitlight)[MAXLIGHTMAPS]; //LRC
 static vec3_t   (*addlight)[MAXLIGHTMAPS]; //LRC
