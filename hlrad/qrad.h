@@ -73,9 +73,9 @@ extern char* daystage_strings[RAD_NB_DAYSTAGES];
 #define DEFAULT_FADE                1.0
 #define DEFAULT_BOUNCE              8
 #define DEFAULT_DUMPPATCHES         false
-#define DEFAULT_BUMPMAPS            false
+#define DEFAULT_BUMPMAPS            true
 #define DEFAULT_NOCOMPRESS			false
-#define DEFAULT_COMPRESSION_LEVEL	COMPRESSION_LEVEL_DEFAULT
+#define DEFAULT_COMPRESSION_LEVEL	COMPRESSION_LEVEL_UBER_COMPRESSION
 #define DEFAULT_AMBIENT_RED         0.0
 #define DEFAULT_AMBIENT_GREEN       0.0
 #define DEFAULT_AMBIENT_BLUE        0.0
@@ -89,8 +89,8 @@ extern char* daystage_strings[RAD_NB_DAYSTAGES];
 #define DEFAULT_LIGHTSCALE          2.0 //1.0 //vluzacn
 #define DEFAULT_DLIGHT_THRESHOLD	10.0
 #define DEFAULT_DLIGHT_SCALE        1.0 //2.0 //vluzacn
-#define DEFAULT_SMOOTHING_VALUE     50.0
-#define DEFAULT_SMOOTHING2_VALUE	-1.0
+#define DEFAULT_SMOOTHING_VALUE     150.0
+#define DEFAULT_SMOOTHING2_VALUE	60.0
 #define DEFAULT_INCREMENTAL         false
 
 enum lightmap_layers_t
@@ -112,7 +112,7 @@ enum lightmap_layers_t
 // ------------------------------------------------------------------------
 
 #define DEFAULT_INDIRECT_SUN        1.0
-#define DEFAULT_EXTRA               false
+#define DEFAULT_EXTRA               true
 #define DEFAULT_SKY_LIGHTING_FIX    true
 #define DEFAULT_CIRCUS              false
 #define DEFAULT_CORING				0.01
