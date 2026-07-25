@@ -882,16 +882,17 @@ bool            MakeBrushPlanes(brush_t* b)
 
         f = (bface_t*)Alloc(sizeof(*f));                             // TODO: This leaks
 
-        f->planenum = planenum;
-        f->plane = &g_mapplanes[planenum];
-        f->next = b->hulls[0].faces;
-        b->hulls[0].faces = f;
-        f->texinfo = g_onlyents ? 0 : TexinfoForBrushTexture(f->plane, &s->td, origin
-						);
+		f->planenum = planenum;
+		f->plane = &g_mapplanes[planenum];
+		f->next = b->hulls[0].faces;
+		b->hulls[0].faces = f;
+		f->texinfo = g_onlyents ? 0 : TexinfoForBrushTexture(f->plane, &s->td, origin
+		);
 		f->bevel = b->bevel || s->bevel;
-    }
+		f->face_id = s->face_id;
+	}
 
-    return true;
+	return true;
 }
 
 

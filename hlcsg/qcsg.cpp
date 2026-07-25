@@ -254,9 +254,9 @@ void            GetParamsFromEnt(entity_t* mapent)
 //  NewFaceFromFace
 //      Duplicates the non point information of a face, used by SplitFace
 // =====================================================================================
-bface_t*        NewFaceFromFace(const bface_t* const in)
+bface_t* NewFaceFromFace(const bface_t* const in)
 {
-    bface_t*        newf;
+    bface_t* newf;
 
     newf = (bface_t*)Alloc(sizeof(bface_t));
 
@@ -264,7 +264,8 @@ bface_t*        NewFaceFromFace(const bface_t* const in)
     newf->texinfo = in->texinfo;
     newf->planenum = in->planenum;
     newf->plane = in->plane;
-	newf->backcontents = in->backcontents;
+    newf->backcontents = in->backcontents;
+    newf->face_id = in->face_id;
 
     return newf;
 }
@@ -297,7 +298,7 @@ void            WriteFace(const int hull, const bface_t* const f
     w = f->w;
 
     // plane summary
-	fprintf (out[hull], "%i %i %i %i %u\n", detaillevel, f->planenum, f->texinfo, f->contents, w->m_NumPoints);
+    fprintf(out[hull], "%i %i %i %i %u %i\n", detaillevel, f->planenum, f->texinfo, f->contents, w->m_NumPoints, f->face_id);
 
     // for each of the points on the face
     for (i = 0; i < w->m_NumPoints; i++)
@@ -334,15 +335,15 @@ void            WriteFace(const int hull, const bface_t* const f
 
     ThreadUnlock();
 }
-void WriteDetailBrush (int hull, const bface_t *faces)
+void WriteDetailBrush(int hull, const bface_t* faces)
 {
-	ThreadLock ();
-	fprintf (out_detailbrush[hull], "0\n");
-	for (const bface_t *f = faces; f; f = f->next)
-	{
-		Winding *w = f->w;
-		fprintf (out_detailbrush[hull], "%i %u\n", f->planenum, w->m_NumPoints);
-		for (int i = 0; i < w->m_NumPoints; i++)
+    ThreadLock();
+    fprintf(out_detailbrush[hull], "0\n");
+    for (const bface_t* f = faces; f; f = f->next)
+    {
+        Winding* w = f->w;
+        fprintf(out_detailbrush[hull], "%i %u %i\n", f->planenum, w->m_NumPoints, f->face_id);
+        for (int i = 0; i < w->m_NumPoints; i++)
 		{
 			fprintf (out_detailbrush[hull], "%5.8f %5.8f %5.8f\n", w->m_Points[i][0], w->m_Points[i][1], w->m_Points[i][2]);
 		}

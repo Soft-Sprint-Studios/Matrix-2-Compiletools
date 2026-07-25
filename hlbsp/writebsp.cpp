@@ -313,9 +313,23 @@ static void     WriteFace(face_t* f)
 	df->smoothgroupbits = 0; // Nothing for now
 	df->samplescale = g_lightmapscale;
 
-	df->texinfo = WriteTexinfo (f->texturenum);
+	g_dfacedispmap[g_numfaces - 1] = -1;
+	if (f->face_id != -1)
+	{
+		for (int j = 0; j < g_numdispinfo; j++)
+		{
+			if (g_dispinfo_map_face_id[j] == f->face_id)
+			{
+				g_ddispinfo[j].face_index = g_numfaces - 1;
+				g_dfacedispmap[g_numfaces - 1] = j;
+				break;
+			}
+		}
+	}
 
-    for (i = 0; i < f->numpoints; i++)
+	df->texinfo = WriteTexinfo(f->texturenum);
+
+	for (i = 0; i < f->numpoints; i++)
     {
 		e = f->outputedges[i];
         hlassume(g_numsurfedges < MAX_MAP_SURFEDGES, assume_MAX_MAP_SURFEDGES);
@@ -564,6 +578,7 @@ void            BeginBSPFile()
     // if the file existed when loaded, so clear them explicitly
 	gNumMappedPlanes = 0;
 	gPlaneMap.clear();
+	memset(g_dfacedispmap, -1, sizeof(g_dfacedispmap));
 
 	g_nummappedtexinfo = 0;
 	g_texinfomap.clear ();

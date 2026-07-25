@@ -14,6 +14,7 @@
 #endif
 
 #include "bsp5.h"
+#include "scriplib.h"
 
 /*
 
@@ -198,9 +199,9 @@ void            GetParamsFromEnt(entity_t* mapent)
 //  NewFaceFromFace
 //      Duplicates the non point information of a face, used by SplitFace and MergeFace.
 // =====================================================================================
-face_t*         NewFaceFromFace(const face_t* const in)
+face_t* NewFaceFromFace(const face_t* const in)
 {
-    face_t*         newf;
+    face_t* newf;
 
     newf = AllocFace();
 
@@ -208,10 +209,160 @@ face_t*         NewFaceFromFace(const face_t* const in)
     newf->texturenum = in->texturenum;
     newf->original = in->original;
     newf->contents = in->contents;
-	newf->facestyle = in->facestyle;
-	newf->detaillevel = in->detaillevel;
+    newf->facestyle = in->facestyle;
+    newf->detaillevel = in->detaillevel;
+    newf->face_id = in->face_id;
 
     return newf;
+}
+
+void LoadMapDisp(const char* filename)
+{
+    char* buffer;
+    if (!q_exists(filename))
+    {
+        return;
+    }
+
+    int size = LoadFile(filename, &buffer);
+    ParseFromMemory(buffer, size);
+
+    g_numdispinfo = 0;
+    g_numdispverts = 0;
+    memset(g_dfacedispmap, -1, sizeof(g_dfacedispmap));
+
+    while (GetToken(true))
+    {
+        if (!strcmp(g_token, "{"))
+        {
+            ddispinfo_t* di = &g_ddispinfo[g_numdispinfo];
+            g_dispinfo_map_face_id[g_numdispinfo] = -1;
+            di->face_index = -1;
+            di->power = 0;
+            di->vert_start = g_numdispverts;
+            vec3_t start_position = { 0.0f, 0.0f, 0.0f };
+            for (int c = 0; c < 4; c++)
+                di->corners[c][0] = di->corners[c][1] = di->corners[c][2] = 0.0f;
+
+            while (GetToken(true) && strcmp(g_token, "}"))
+            {
+                if (!strcmp(g_token, "face_id"))
+                {
+                    GetToken(false);
+                    g_dispinfo_map_face_id[g_numdispinfo] = atoi(g_token);
+                }
+                else if (!strcmp(g_token, "power"))
+                {
+                    GetToken(false);
+                    di->power = atoi(g_token);
+                }
+                else if (!strcmp(g_token, "start_position"))
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        GetToken(false);
+                        start_position[i] = (float)atof(g_token);
+                    }
+                }
+                else if (!strcmp(g_token, "corners"))
+                {
+                    for (int c = 0; c < 4; c++)
+                    {
+                        for (int i = 0; i < 3; i++)
+                        {
+                            GetToken(false);
+                            di->corners[c][i] = (float)atof(g_token);
+                        }
+                    }
+                }
+                else if (!strcmp(g_token, "distances"))
+                {
+                    int count = (1 << di->power) + 1;
+                    count *= count;
+                    for (int i = 0; i < count; i++)
+                    {
+                        GetToken(false);
+                        g_ddispverts[g_numdispverts++].dist = (float)atof(g_token);
+                        g_ddispverts[g_numdispverts].alpha = 0.0f;
+                    }
+                }
+                else if (!strcmp(g_token, "alphas"))
+                {
+                    int count = (1 << di->power) + 1;
+                    count *= count;
+                    for (int i = 0; i < count; i++)
+                    {
+                        GetToken(false);
+                        g_ddispverts[di->vert_start + i].alpha = (float)atof(g_token);
+                    }
+                }
+            }
+
+            int start_index = 0;
+            float min_dist = 99999999.0f;
+            for (int c = 0; c < 4; c++)
+            {
+                vec3_t diff;
+                VectorSubtract(di->corners[c], start_position, diff);
+                float dist = sqrt(DotProduct(diff, diff));
+                if (dist < min_dist)
+                {
+                    min_dist = dist;
+                    start_index = c;
+                }
+            }
+
+            if (start_index != 0)
+            {
+                vec3_t temp[4];
+                for (int c = 0; c < 4; c++)
+                    VectorCopy(di->corners[(start_index + c) % 4], temp[c]);
+                for (int c = 0; c < 4; c++)
+                    VectorCopy(temp[c], di->corners[c]);
+
+                int N = 1 << di->power;
+                int K = N + 1;
+                ddispvert_t* temp_verts = (ddispvert_t*)malloc(K * K * sizeof(ddispvert_t));
+
+                for (int v = 0; v < K; v++)
+                {
+                    for (int u = 0; u < K; u++)
+                    {
+                        temp_verts[v * K + u] = g_ddispverts[di->vert_start + v * K + u];
+                    }
+                }
+
+                for (int v = 0; v < K; v++)
+                {
+                    for (int u = 0; u < K; u++)
+                    {
+                        int src_u = u;
+                        int src_v = v;
+                        if (start_index == 1)
+                        {
+                            src_u = N - v;
+                            src_v = u;
+                        }
+                        else if (start_index == 2)
+                        {
+                            src_u = N - u;
+                            src_v = N - v;
+                        }
+                        else if (start_index == 3)
+                        {
+                            src_u = v;
+                            src_v = N - u;
+                        }
+                        g_ddispverts[di->vert_start + v * K + u] = temp_verts[src_v * K + src_u];
+                    }
+                }
+                free(temp_verts);
+            }
+
+            g_numdispinfo++;
+        }
+    }
+    free(buffer);
 }
 
 // =====================================================================================
@@ -971,17 +1122,19 @@ static surfchain_t* ReadSurfs(FILE* file)
 		if (file == polyfiles[2] && g_nohull2)
 			break;
         line++;
-        r = fscanf(file, "%i %i %i %i %i\n", &detaillevel, &planenum, &g_texinfo, &contents, &numpoints);
+        int face_id = -1;
+        r = fscanf(file, "%i %i %i %i %i %i\n", &detaillevel, &planenum, &g_texinfo, &contents, &numpoints, &face_id);
         if (r == 0 || r == -1)
         {
             return NULL;
         }
         if (planenum == -1)                                // end of model
         {
-			Developer (DEVELOPER_LEVEL_MEGASPAM, "inaccuracy: average %.8f max %.8f\n", inaccuracy_total / inaccuracy_count, inaccuracy_max);
+            Developer(DEVELOPER_LEVEL_MEGASPAM, "inaccuracy: average %.8f max %.8f\n", inaccuracy_total / inaccuracy_count, inaccuracy_max);
             break;
         }
-		if (r != 5)
+        if (r == 5) face_id = -1;
+        else if (r != 6)
         {
             Error("ReadSurfs (line %i): scanf failure", line);
         }
@@ -1026,6 +1179,7 @@ static surfchain_t* ReadSurfs(FILE* file)
         f->texturenum = g_texinfo;
         f->contents = contents;
         f->numpoints = numpoints;
+        f->face_id = face_id;
         f->next = validfaces[planenum];
         validfaces[planenum] = f;
 
@@ -1085,16 +1239,18 @@ static brush_t *ReadBrushes (FILE *file)
 		brushes = b;
 		side_t **psn;
 		psn = &b->sides;
-		while (1)
-		{
-			int planenum;
-			int numpoints;
-			r = fscanf (file, "%i %u\n", &planenum, &numpoints);
-			if (r != 2)
-			{
-				Error ("ReadBrushes: get side failed");
-			}
-			if (planenum == -1)
+        while (1)
+        {
+            int planenum;
+            int numpoints;
+            int face_id = -1;
+            r = fscanf(file, "%i %u %i\n", &planenum, &numpoints, &face_id);
+            if (r == 2) face_id = -1;
+            else if (r != 3)
+            {
+                Error("ReadBrushes: get side failed");
+            }
+            if (planenum == -1)
 			{
 				break;
 			}
@@ -1586,6 +1742,10 @@ static void     ProcessFile(const char* const filename)
 	}
     // init the tables to be shared by all models
     BeginBSPFile();
+
+    char dispname[_MAX_PATH];
+    safe_snprintf(dispname, _MAX_PATH, "%s.mapdisp", filename);
+    LoadMapDisp(dispname);
 
     // process each model individually
     while (ProcessModel())

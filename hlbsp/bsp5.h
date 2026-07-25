@@ -92,6 +92,7 @@ typedef struct face_s                                      // This structure is 
     int             numpoints;
     facestyle_e     facestyle;
 	int				referenced;                            // only valid for original faces
+    int             face_id;
 
     // vector quad word aligned
     vec3_t          pts[MAXEDGES];                         // FIXME: change to use winding_t
@@ -311,5 +312,6 @@ extern bool		g_nohull2;
 
 extern face_t*  NewFaceFromFace(const face_t* const in);
 extern void     SplitFace(face_t* in, const dplane_t* const split, face_t** front, face_t** back);
+extern void     LoadMapDisp(const char* filename);
 
 #endif // qbsp.c====================================================================== HLBSP_H__

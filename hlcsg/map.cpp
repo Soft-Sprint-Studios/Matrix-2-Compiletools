@@ -431,8 +431,16 @@ static void ParseBrush(entity_t* mapent)
             side->td.vects.quark.vects[1][3] = -DotProduct(side->td.vects.quark.vects[1], side->planepts[0]);
         }
 
-        side->td.txcommand = g_TXcommand;                  // Quark stuff, but needs setting always
-    };
+		side->td.txcommand = g_TXcommand;                  // Quark stuff, but needs setting always
+
+		side->face_id = -1;
+		if (ok && !strcmp(g_token, "face_id"))
+		{
+			GetToken(false);
+			side->face_id = atoi(g_token);
+			ok = GetToken(true);
+		}
+	};
 	if (b->cliphull != 0) // has CLIP* texture
 	{
 		unsigned int mask_anyhull = 0;

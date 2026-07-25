@@ -72,6 +72,13 @@ int				g_dlightgriddatasize;
 byte*			g_dlightgriddata;
 int				g_dlightgriddata_checksum;
 
+ddispinfo_t     g_ddispinfo[MAX_MAP_FACES];
+int             g_numdispinfo = 0;
+ddispvert_t     g_ddispverts[MAX_MAP_VERTS * 16];
+int             g_numdispverts = 0;
+int             g_dfacedispmap[MAX_MAP_FACES];
+int             g_dispinfo_map_face_id[MAX_MAP_FACES];
+
 int             g_texdatasize;
 byte*           g_dtexdata;                                  // (dmiptexlump_t)
 int             g_dtexdata_checksum;
@@ -417,6 +424,32 @@ static void     SwapBSPFile(const bool todisk)
         g_dedges[i].v[0] = LittleLong(g_dedges[i].v[0]);
         g_dedges[i].v[1] = LittleLong(g_dedges[i].v[1]);
     }
+	
+	//
+	// displacements
+	//
+	for (i = 0; i < g_numdispinfo; i++)
+	{
+		g_ddispinfo[i].face_index = LittleLong(g_ddispinfo[i].face_index);
+		g_ddispinfo[i].power = LittleLong(g_ddispinfo[i].power);
+		g_ddispinfo[i].vert_start = LittleLong(g_ddispinfo[i].vert_start);
+
+		for (int c = 0; c < 4; c++)
+		{
+			g_ddispinfo[i].corners[c][0] = LittleFloat(g_ddispinfo[i].corners[c][0]);
+			g_ddispinfo[i].corners[c][1] = LittleFloat(g_ddispinfo[i].corners[c][1]);
+			g_ddispinfo[i].corners[c][2] = LittleFloat(g_ddispinfo[i].corners[c][2]);
+		}
+	}
+	for (i = 0; i < g_numdispverts; i++)
+	{
+		g_ddispverts[i].dist = LittleFloat(g_ddispverts[i].dist);
+		g_ddispverts[i].alpha = LittleFloat(g_ddispverts[i].alpha);
+	}
+	for (i = 0; i < g_numfaces; i++)
+	{
+		g_dfacedispmap[i] = LittleLong(g_dfacedispmap[i]);
+	}
 }
 
 // =====================================================================================
@@ -571,6 +604,34 @@ void            LoadBSPImage(dheader_t* const header)
 			g_dlightgriddata = new byte[header->lumps[LUMP_LIGHTGRID_DATA].filelen];
 			g_dlightgriddatasize = CopyLump(LUMP_LIGHTGRID_DATA, g_dlightgriddata, 1, header);
 		}
+	}
+
+	if (header->flags & PBSPV2_FL_HAS_DISPLACEMENT)
+	{
+		int offset = header->lumps[LUMP_DISPLACEMENTS].fileofs;
+		int length = header->lumps[LUMP_DISPLACEMENTS].filelen;
+		if (length > 0)
+		{
+			byte* pbuffer = reinterpret_cast<byte*>(header) + offset;
+			const ddispheader_t* pdispheader = reinterpret_cast<const ddispheader_t*>(pbuffer);
+			g_numdispinfo = pdispheader->num_dispinfos;
+			g_numdispverts = pdispheader->num_dispverts;
+
+			const byte* pdata = pbuffer + sizeof(ddispheader_t);
+			memcpy(g_ddispinfo, pdata, g_numdispinfo * sizeof(ddispinfo_t));
+			pdata += g_numdispinfo * sizeof(ddispinfo_t);
+
+			memcpy(g_ddispverts, pdata, g_numdispverts * sizeof(ddispvert_t));
+			pdata += g_numdispverts * sizeof(ddispvert_t);
+
+			memcpy(g_dfacedispmap, pdata, g_numfaces * sizeof(int));
+		}
+	}
+	else
+	{
+		g_numdispinfo = 0;
+		g_numdispverts = 0;
+		memset(g_dfacedispmap, -1, sizeof(g_dfacedispmap));
 	}
 
     Free(header);                                          // everything has been copied out
@@ -732,6 +793,33 @@ void            WriteBSPFile(const char* const filename)
 
 	// Add lightgrid lump
 	AddLump(LUMP_LIGHTGRID_DATA, g_dlightgriddata, g_dlightgriddatasize, header, bspfile);
+
+	if (g_numdispinfo > 0)
+	{
+		header->flags |= PBSPV2_FL_HAS_DISPLACEMENT;
+
+		int headersize = sizeof(ddispheader_t);
+		int infosize = g_numdispinfo * sizeof(ddispinfo_t);
+		int vertsize = g_numdispverts * sizeof(ddispvert_t);
+		int mapsize = g_numfaces * sizeof(int);
+		int totalsize = headersize + infosize + vertsize + mapsize;
+
+		byte* pbuffer = (byte*)malloc(totalsize);
+		ddispheader_t* pdispheader = reinterpret_cast<ddispheader_t*>(pbuffer);
+		pdispheader->num_dispinfos = g_numdispinfo;
+		pdispheader->num_dispverts = g_numdispverts;
+		pdispheader->num_faces = g_numfaces;
+
+		byte* pdata = pbuffer + headersize;
+		memcpy(pdata, g_ddispinfo, infosize);
+		pdata += infosize;
+		memcpy(pdata, g_ddispverts, vertsize);
+		pdata += vertsize;
+		memcpy(pdata, g_dfacedispmap, mapsize);
+
+		AddLump(LUMP_DISPLACEMENTS, pbuffer, totalsize, header, bspfile);
+		free(pbuffer);
+	}
 
     fseek(bspfile, 0, SEEK_SET);
     SafeWrite(bspfile, header, sizeof(dheader_t));
@@ -1286,6 +1374,8 @@ void            PrintBSPFileSizes()
 
 	if (g_dvertexlightdatasize_vectors_actual)
 		totalmemory += GlobUsage("vertexvectors", g_dvertexlightdatasize_vectors_actual, g_max_map_lightdata);
+
+	totalmemory += ArrayUsage("displacements", (g_numdispinfo > 0 ? 1 : 0), 1, (sizeof(ddispheader_t) + (g_numdispinfo * sizeof(ddispinfo_t)) + (g_numdispverts * sizeof(ddispvert_t)) + (g_numfaces * sizeof(int))));
 
 	if (numallocblocks == -1)
 	{

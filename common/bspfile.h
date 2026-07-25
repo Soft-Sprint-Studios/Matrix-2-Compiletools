@@ -83,9 +83,10 @@
 
 #define TOOLVERSION 2
 
+#define PBSPV2_FL_HAS_SMOOTHING_GROUPS  (1<<0)
 #define PBSPV2_FL_HAS_VERTEX_LIGHTING   (1<<1)
 #define PBSPV2_FL_HAS_LIGHTGRID_DATA    (1<<2)
-#define PBSPV2_FL_HAS_SMOOTHING_GROUPS  (1<<3)
+#define PBSPV2_FL_HAS_DISPLACEMENT      (1<<3)
 
 //
 // BSP File Structures
@@ -122,6 +123,7 @@ enum bsp_lumps_t
     LUMP_VERTEX_LIGHTING_DIFFUSE,
     LUMP_VERTEX_LIGHTING_VECTORS,
     LUMP_LIGHTGRID_DATA,
+    LUMP_DISPLACEMENTS,
 
     // Must be last
     HEADER_LUMPS
@@ -410,6 +412,27 @@ struct dlightgridsample_t
     int rawsampleoffset;
 };
 
+struct ddispheader_t
+{
+    int num_dispinfos;
+    int num_dispverts;
+    int num_faces;
+};
+
+struct ddispinfo_t
+{
+    int face_index;
+    int power;
+    int vert_start;
+    float corners[4][3];
+};
+
+struct ddispvert_t
+{
+    float dist;
+    float alpha;
+};
+
 //============================================================================
 
 #define ANGLE_UP    -1.0 //#define ANGLE_UP    -1 //--vluzacn
@@ -474,6 +497,13 @@ extern int		g_dvertexlightdatasize_vectors_actual;
 extern int		g_dlightgriddatasize;
 extern byte*	g_dlightgriddata;
 extern int		g_dlightgriddata_checksum;
+
+extern ddispinfo_t g_ddispinfo[MAX_MAP_FACES];
+extern int      g_numdispinfo;
+extern ddispvert_t g_ddispverts[MAX_MAP_VERTS * 16];
+extern int      g_numdispverts;
+extern int      g_dfacedispmap[MAX_MAP_FACES];
+extern int      g_dispinfo_map_face_id[MAX_MAP_FACES];
 
 extern int      g_texdatasize;
 extern byte*    g_dtexdata;                                  // (dmiptexlump_t)
