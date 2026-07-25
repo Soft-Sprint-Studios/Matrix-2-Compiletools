@@ -445,6 +445,9 @@ static void     SwapBSPFile(const bool todisk)
 	{
 		g_ddispverts[i].dist = LittleFloat(g_ddispverts[i].dist);
 		g_ddispverts[i].alpha = LittleFloat(g_ddispverts[i].alpha);
+		g_ddispverts[i].vector[0] = LittleFloat(g_ddispverts[i].vector[0]);
+		g_ddispverts[i].vector[1] = LittleFloat(g_ddispverts[i].vector[1]);
+		g_ddispverts[i].vector[2] = LittleFloat(g_ddispverts[i].vector[2]);
 	}
 	for (i = 0; i < g_numfaces; i++)
 	{

@@ -275,6 +275,19 @@ void LoadMapDisp(const char* filename)
                         }
                     }
                 }
+                else if (!strcmp(g_token, "vectors"))
+                {
+                    int count = (1 << di->power) + 1;
+                    count *= count;
+                    for (int i = 0; i < count; i++)
+                    {
+                        for (int k = 0; k < 3; k++)
+                        {
+                            GetToken(false);
+                            g_ddispverts[di->vert_start + i].vector[k] = (float)atof(g_token);
+                        }
+                    }
+                }
                 else if (!strcmp(g_token, "distances"))
                 {
                     int count = (1 << di->power) + 1;
