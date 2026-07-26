@@ -286,6 +286,18 @@ int             BigLong(const int l)
     return l;
 }
 
+uint64_t        Little64(const uint64_t l)
+{
+    return ((l & 0x00000000000000FFULL) << 56) |
+        ((l & 0x000000000000FF00ULL) << 40) |
+        ((l & 0x0000000000FF0000ULL) << 24) |
+        ((l & 0x00000000FF000000ULL) << 8) |
+        ((l & 0x000000FF00000000ULL) >> 8) |
+        ((l & 0x0000FF0000000000ULL) >> 24) |
+        ((l & 0x00FF000000000000ULL) >> 40) |
+        ((l & 0xFF00000000000000ULL) >> 56);
+}
+
 float           LittleFloat(const float l)
 {
     union
@@ -336,6 +348,11 @@ int             BigLong(const int l)
     b4 = (byte) ((l >> 24) & 255);
 
     return ((int)b1 << 24) + ((int)b2 << 16) + ((int)b3 << 8) + b4;
+}
+
+uint64_t        Little64(const uint64_t l)
+{
+    return l;
 }
 
 int             LittleLong(const int l)

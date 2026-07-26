@@ -772,6 +772,52 @@ static void     AddDisplacementLump(int lumpnum, dheader_t* header, FILE* bspfil
 }
 
 // =====================================================================================
+//  AddChecksumLump
+// =====================================================================================
+static void     AddChecksumLump(int lumpnum, dheader_t* header, FILE* bspfile, const char* filename)
+{
+	int checksum_offset = ftell(bspfile);
+	header->lumps[lumpnum].fileofs = LittleLong(checksum_offset);
+	header->lumps[lumpnum].filelen = LittleLong(sizeof(dchecksum_t));
+
+	uint64_t computed_checksum = 14695981039346656037ULL;
+
+	byte* pHeaderBytes = (byte*)header;
+	for (int i = 0; i < sizeof(dheader_t); i++)
+	{
+		computed_checksum ^= pHeaderBytes[i];
+		computed_checksum *= 1099511628211ULL;
+	}
+
+	fflush(bspfile);
+	FILE* readfile = fopen(filename, "rb");
+	if (readfile)
+	{
+		fseek(readfile, sizeof(dheader_t), SEEK_SET);
+		int bytes_to_read = checksum_offset - sizeof(dheader_t);
+		if (bytes_to_read > 0)
+		{
+			byte* pBuffer = (byte*)malloc(bytes_to_read);
+			if (pBuffer)
+			{
+				fread(pBuffer, 1, bytes_to_read, readfile);
+				for (int i = 0; i < bytes_to_read; i++)
+				{
+					computed_checksum ^= pBuffer[i];
+					computed_checksum *= 1099511628211ULL;
+				}
+				free(pBuffer);
+			}
+		}
+		fclose(readfile);
+	}
+
+	dchecksum_t checksum_lump;
+	checksum_lump.checksum = Little64(computed_checksum);
+	SafeWrite(bspfile, &checksum_lump, sizeof(dchecksum_t));
+}
+
+// =====================================================================================
 //  WriteBSPFile
 //      Swaps the bsp file in place, so it should not be referenced again
 // =====================================================================================
@@ -788,7 +834,7 @@ void            WriteBSPFile(const char* const filename)
 
 	header->id = PBSP_HEADER;
 	header->version = LittleLong(PBSP_VERSION);
-	header->flags |= (PBSPV2_FL_HAS_VERTEX_LIGHTING|PBSPV2_FL_HAS_LIGHTGRID_DATA|PBSPV2_FL_HAS_DISPLACEMENT);
+	header->flags |= (PBSPV2_FL_HAS_VERTEX_LIGHTING|PBSPV2_FL_HAS_LIGHTGRID_DATA|PBSPV2_FL_HAS_DISPLACEMENT|PBSPV2_FL_HAS_CHECKSUM);
 
     bspfile = SafeOpenWrite(filename);
     SafeWrite(bspfile, header, sizeof(dheader_t));         // overwritten later
@@ -836,6 +882,8 @@ void            WriteBSPFile(const char* const filename)
 	AddLump(LUMP_LIGHTGRID_DATA, g_dlightgriddata, g_dlightgriddatasize, header, bspfile);
 
 	AddDisplacementLump(LUMP_DISPLACEMENTS, header, bspfile);
+
+	AddChecksumLump(LUMP_CHECKSUM, header, bspfile, filename);
 
     fseek(bspfile, 0, SEEK_SET);
     SafeWrite(bspfile, header, sizeof(dheader_t));

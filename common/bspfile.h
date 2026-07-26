@@ -87,6 +87,7 @@
 #define PBSPV2_FL_HAS_VERTEX_LIGHTING   (1<<1)
 #define PBSPV2_FL_HAS_LIGHTGRID_DATA    (1<<2)
 #define PBSPV2_FL_HAS_DISPLACEMENT      (1<<3)
+#define PBSPV2_FL_HAS_CHECKSUM          (1<<4)
 
 //
 // BSP File Structures
@@ -124,6 +125,7 @@ enum bsp_lumps_t
     LUMP_VERTEX_LIGHTING_VECTORS,
     LUMP_LIGHTGRID_DATA,
     LUMP_DISPLACEMENTS,
+    LUMP_CHECKSUM,
 
     // Must be last
     HEADER_LUMPS
@@ -432,6 +434,11 @@ struct ddispvert_t
     float vector[3];
     float dist;
     float alpha;
+};
+
+struct dchecksum_t
+{
+    uint64_t checksum;
 };
 
 //============================================================================

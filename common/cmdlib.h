@@ -165,6 +165,7 @@ extern short    BigShort(short l);
 extern short    LittleShort(short l);
 extern int      BigLong(int l);
 extern int      LittleLong(int l);
+extern uint64_t Little64(uint64_t l);
 extern float    BigFloat(float l);
 extern float    LittleFloat(float l);
 
