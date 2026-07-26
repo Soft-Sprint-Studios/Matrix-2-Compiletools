@@ -71,3 +71,9 @@
  - Update logging of light data compression, etc to show percentages.
  - Make light grid logging properly print the number of occluded samples.
  - Make sure occluded samples in light grid data are properly marked with a -1 sample data offset.
+
+2026 July 26th:
+ - Fix BSP vertex lighting data being made invalid when onlyents is used.
+ - Implement new function required for parenting system in Pathos.
+ - Optimize light grid and baked vertex lighting calculations using bitsets and less skylight calculations.
+ - Fix light grid and baked vertex considering patches with extremely low attenuation values causing long compiles.

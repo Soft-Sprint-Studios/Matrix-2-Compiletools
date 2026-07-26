@@ -460,6 +460,9 @@ typedef struct
 	int modelnum;
 	vec3_t origin;
 
+	vec3_t mins;
+	vec3_t maxs;
+
     vec3_t transparency_scale;
     bool transparency;
 	int style; // -1 = no style; transparency must be false if style >= 0
@@ -584,8 +587,17 @@ extern void     PairEdges();
 #define SKYLEVELMAX 8
 #define SKYLEVEL_SOFTSKYON 7
 #define SKYLEVEL_SOFTSKYOFF 4
+#define SKYLEVEL_SOFTSKYFAST 3
 #define SUNSPREAD_SKYLEVEL 7
 #define SUNSPREAD_THRESHOLD 15.0
+
+enum softskymode_t
+{
+	SOFTSKY_MINIMAL = 0,
+	SOFTSKY_OFF,
+	SOFTSKY_ON
+};
+
 extern int		g_numskynormals[SKYLEVELMAX+1]; // 0, 6, 18, 66, 258, 1026, 4098, 16386, 65538
 extern vec3_t*	g_skynormals[SKYLEVELMAX+1]; //[numskynormals]
 extern vec_t*	g_skynormalsizes[SKYLEVELMAX+1]; // the weight of each normal

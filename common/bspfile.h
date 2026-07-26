@@ -560,6 +560,7 @@ typedef struct
     int             numbrushes;
     epair_t*        epairs;
     int             extradataindex;
+    int             parentindex;
 }
 entity_t;
 

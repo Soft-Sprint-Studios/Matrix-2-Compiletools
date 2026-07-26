@@ -2339,7 +2339,6 @@ int             main(const int argc, char** argv)
     NamedRunThreadsOnIndividual(g_nummapbrushes, g_estimate, CreateBrush);
     CheckFatal();
 
-
     // boundworld
     BoundWorld();
 

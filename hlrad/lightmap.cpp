@@ -2747,7 +2747,7 @@ void BuildDiffuseNormals ()
 	free (triangles);
 }
 
-void AddLight(directlight_t* l, CBitSet& directLightTraceBitset, CBitSet& directLightTraceSetBitset, std::vector<CBitSet>& envLightsBitset, std::vector<CBitSet>& envLightsSetBitset, std::vector<CBitSet>& envSkyLightBitset, std::vector<CBitSet>& envSkyLightSetBitset, vec3_t* pdirections, const vec3_t pos, const byte* const pvs, const vec_t* pnormal, float normalfactor, byte* styles, int step, int miptex, int texlightgap_surfacenum, vec3_t* padds, vec3_t* padds_ambient, vec3_t* padds_diffuse, vec3_t* padds_lightvectors, vec3_t* ptexlightgap_textoworld, bool bumpinfopass, bool createbumpmapdata, bool softsky)
+void AddLight(directlight_t* l, CBitSet& directLightTraceBitset, CBitSet& directLightTraceSetBitset, std::vector<CBitSet>& envLightsBitset, std::vector<CBitSet>& envLightsSetBitset, std::vector<CBitSet>& envSkyLightBitset, std::vector<CBitSet>& envSkyLightSetBitset, vec3_t* pdirections, const vec3_t pos, const byte* const pvs, const vec_t* pnormal, float normalfactor, byte* styles, int step, int miptex, int texlightgap_surfacenum, vec3_t* padds, vec3_t* padds_ambient, vec3_t* padds_diffuse, vec3_t* padds_lightvectors, vec3_t* ptexlightgap_textoworld, bool bumpinfopass, bool createbumpmapdata, int softskysetting)
 {
 	vec3_t			add_one_ambient, add_one_diffuse;
 	vec3_t          delta, delta_bump;
@@ -2922,7 +2922,7 @@ void AddLight(directlight_t* l, CBitSet& directLightTraceBitset, CBitSet& direct
 		{
 			// check step
 			step_match = 0;
-			if (softsky)
+			if (softskysetting == SOFTSKY_ON)
 				step_match = 1;
 
 			if (g_fastmode)
@@ -2935,8 +2935,22 @@ void AddLight(directlight_t* l, CBitSet& directLightTraceBitset, CBitSet& direct
 			if (g_indirect_sun <= 0.0 || VectorCompare (l->diffuse_intensity,vec3_origin)&& VectorCompare (l->diffuse_intensity2, vec3_origin))
 				continue;
 
+			int softskylevel;
+			switch(softskysetting)
+			{
+			case SOFTSKY_MINIMAL:
+				softskylevel = SKYLEVEL_SOFTSKYFAST;
+				break;
+			case SOFTSKY_OFF:
+				softskylevel = SKYLEVEL_SOFTSKYOFF;
+				break;
+			case SOFTSKY_ON:
+				softskylevel = SKYLEVEL_SOFTSKYON;
+				break;
+			}
+
 			vec3_t sky_intensity;
-			int numskynormals = g_numskynormals[softsky?SKYLEVEL_SOFTSKYON:SKYLEVEL_SOFTSKYOFF];
+			int numskynormals = g_numskynormals[softskylevel];
 
 			// Records traceline results
 			CBitSet& skyLightBitset = envSkyLightBitset[l->envindex];
@@ -2949,8 +2963,8 @@ void AddLight(directlight_t* l, CBitSet& directLightTraceBitset, CBitSet& direct
 				skyLightSetBitset.resize(numskynormals);
 
 			// loop over the normals
-			vec3_t *skynormals = g_skynormals[softsky?SKYLEVEL_SOFTSKYON:SKYLEVEL_SOFTSKYOFF];
-			vec_t *skyweights = g_skynormalsizes[softsky?SKYLEVEL_SOFTSKYON:SKYLEVEL_SOFTSKYOFF];
+			vec3_t *skynormals = g_skynormals[softskylevel];
+			vec_t *skyweights = g_skynormalsizes[softskylevel];
 			for (int j = 0; j < numskynormals; j++)
 			{
 				// make sure the angle is okay
@@ -3506,7 +3520,7 @@ static void     GatherSampleLight(const vec3_t pos, const byte* const pvs, const
 				for (; l; l = l->next)
 				{
 					// Add in this light
-					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, normalfactor, styles, step, miptex, texlightgap_surfacenum, adds, adds_ambient, adds_diffuse, adds_lightvectors, texlightgap_textoworld, false, g_bumpmaps, g_softsky);
+					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, normalfactor, styles, step, miptex, texlightgap_surfacenum, adds, adds_ambient, adds_diffuse, adds_lightvectors, texlightgap_textoworld, false, g_bumpmaps, g_softsky ? SOFTSKY_ON : SOFTSKY_OFF);
 				}
 			}
 		}
@@ -3529,7 +3543,7 @@ static void     GatherSampleLight(const vec3_t pos, const byte* const pvs, const
 				if (i == 0 ? g_sky_lighting_fix : pvs[(i - 1) >> 3] & (1 << ((i - 1) & 7)))
 				{
 					for (; l; l = l->next)
-						AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, normalfactor, styles, step, miptex, texlightgap_surfacenum, adds, adds_ambient, adds_diffuse, adds_lightvectors, texlightgap_textoworld, true, g_bumpmaps, g_softsky);
+						AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, normalfactor, styles, step, miptex, texlightgap_surfacenum, adds, adds_ambient, adds_diffuse, adds_lightvectors, texlightgap_textoworld, true, g_bumpmaps, g_softsky ? SOFTSKY_ON : SOFTSKY_OFF);
 				}
 			}
 		}
