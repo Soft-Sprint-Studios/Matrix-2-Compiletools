@@ -296,7 +296,6 @@ void LoadMapDisp(const char* filename)
                     {
                         GetToken(false);
                         g_ddispverts[g_numdispverts++].dist = (float)atof(g_token);
-                        g_ddispverts[g_numdispverts].alpha = 0.0f;
                     }
                 }
                 else if (!strcmp(g_token, "alphas"))
