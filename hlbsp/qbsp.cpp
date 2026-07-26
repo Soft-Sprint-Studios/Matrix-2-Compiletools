@@ -216,6 +216,9 @@ face_t* NewFaceFromFace(const face_t* const in)
     return newf;
 }
 
+// =====================================================================================
+//  LoadMapDisp
+// =====================================================================================
 void LoadMapDisp(const char* filename)
 {
     char* buffer;

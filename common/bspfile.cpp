@@ -529,6 +529,39 @@ static int      CopyLightingLump(int lump, void* dest, int size, const dheader_t
 }
 
 // =====================================================================================
+//  CopyDisplacementLump
+// =====================================================================================
+static void     CopyDisplacementLump(int lump, const dheader_t* const header)
+{
+	int offset = header->lumps[lump].fileofs;
+	int length = header->lumps[lump].filelen;
+
+	if (length > 0)
+	{
+		byte* pbuffer = (byte*)header + offset;
+		const ddispheader_t* pdispheader = (const ddispheader_t*)pbuffer;
+
+		g_numdispinfo = pdispheader->num_dispinfos;
+		g_numdispverts = pdispheader->num_dispverts;
+
+		const byte* pdata = pbuffer + sizeof(ddispheader_t);
+		memcpy(g_ddispinfo, pdata, g_numdispinfo * sizeof(ddispinfo_t));
+		pdata += g_numdispinfo * sizeof(ddispinfo_t);
+
+		memcpy(g_ddispverts, pdata, g_numdispverts * sizeof(ddispvert_t));
+		pdata += g_numdispverts * sizeof(ddispvert_t);
+
+		memcpy(g_dfacedispmap, pdata, g_numfaces * sizeof(int));
+	}
+	else
+	{
+		g_numdispinfo = 0;
+		g_numdispverts = 0;
+		memset(g_dfacedispmap, -1, sizeof(g_dfacedispmap));
+	}
+}
+
+// =====================================================================================
 //  LoadBSPFile
 //      balh
 // =====================================================================================
@@ -611,30 +644,7 @@ void            LoadBSPImage(dheader_t* const header)
 
 	if (header->flags & PBSPV2_FL_HAS_DISPLACEMENT)
 	{
-		int offset = header->lumps[LUMP_DISPLACEMENTS].fileofs;
-		int length = header->lumps[LUMP_DISPLACEMENTS].filelen;
-		if (length > 0)
-		{
-			byte* pbuffer = reinterpret_cast<byte*>(header) + offset;
-			const ddispheader_t* pdispheader = reinterpret_cast<const ddispheader_t*>(pbuffer);
-			g_numdispinfo = pdispheader->num_dispinfos;
-			g_numdispverts = pdispheader->num_dispverts;
-
-			const byte* pdata = pbuffer + sizeof(ddispheader_t);
-			memcpy(g_ddispinfo, pdata, g_numdispinfo * sizeof(ddispinfo_t));
-			pdata += g_numdispinfo * sizeof(ddispinfo_t);
-
-			memcpy(g_ddispverts, pdata, g_numdispverts * sizeof(ddispvert_t));
-			pdata += g_numdispverts * sizeof(ddispvert_t);
-
-			memcpy(g_dfacedispmap, pdata, g_numfaces * sizeof(int));
-		}
-	}
-	else
-	{
-		g_numdispinfo = 0;
-		g_numdispverts = 0;
-		memset(g_dfacedispmap, -1, sizeof(g_dfacedispmap));
+		CopyDisplacementLump(LUMP_DISPLACEMENTS, header);
 	}
 
     Free(header);                                          // everything has been copied out
@@ -734,6 +744,34 @@ static void     AddLightingLump(int lumpnum, void* data, int len, int actual_siz
 }
 
 // =====================================================================================
+//  AddDisplacementLump
+// =====================================================================================
+static void     AddDisplacementLump(int lumpnum, dheader_t* header, FILE* bspfile)
+{
+	int headersize = sizeof(ddispheader_t);
+	int infosize = g_numdispinfo * sizeof(ddispinfo_t);
+	int vertsize = g_numdispverts * sizeof(ddispvert_t);
+	int mapsize = g_numfaces * sizeof(int);
+	int totalsize = headersize + infosize + vertsize + mapsize;
+
+	byte* pbuffer = (byte*)malloc(totalsize);
+	ddispheader_t* pdispheader = (ddispheader_t*)pbuffer;
+	pdispheader->num_dispinfos = g_numdispinfo;
+	pdispheader->num_dispverts = g_numdispverts;
+	pdispheader->num_faces = g_numfaces;
+
+	byte* pdata = pbuffer + headersize;
+	memcpy(pdata, g_ddispinfo, infosize);
+	pdata += infosize;
+	memcpy(pdata, g_ddispverts, vertsize);
+	pdata += vertsize;
+	memcpy(pdata, g_dfacedispmap, mapsize);
+
+	AddLump(lumpnum, pbuffer, totalsize, header, bspfile);
+	free(pbuffer);
+}
+
+// =====================================================================================
 //  WriteBSPFile
 //      Swaps the bsp file in place, so it should not be referenced again
 // =====================================================================================
@@ -750,7 +788,7 @@ void            WriteBSPFile(const char* const filename)
 
 	header->id = PBSP_HEADER;
 	header->version = LittleLong(PBSP_VERSION);
-	header->flags |= (PBSPV2_FL_HAS_VERTEX_LIGHTING|PBSPV2_FL_HAS_LIGHTGRID_DATA);
+	header->flags |= (PBSPV2_FL_HAS_VERTEX_LIGHTING|PBSPV2_FL_HAS_LIGHTGRID_DATA|PBSPV2_FL_HAS_DISPLACEMENT);
 
     bspfile = SafeOpenWrite(filename);
     SafeWrite(bspfile, header, sizeof(dheader_t));         // overwritten later
@@ -797,32 +835,7 @@ void            WriteBSPFile(const char* const filename)
 	// Add lightgrid lump
 	AddLump(LUMP_LIGHTGRID_DATA, g_dlightgriddata, g_dlightgriddatasize, header, bspfile);
 
-	if (g_numdispinfo > 0)
-	{
-		header->flags |= PBSPV2_FL_HAS_DISPLACEMENT;
-
-		int headersize = sizeof(ddispheader_t);
-		int infosize = g_numdispinfo * sizeof(ddispinfo_t);
-		int vertsize = g_numdispverts * sizeof(ddispvert_t);
-		int mapsize = g_numfaces * sizeof(int);
-		int totalsize = headersize + infosize + vertsize + mapsize;
-
-		byte* pbuffer = (byte*)malloc(totalsize);
-		ddispheader_t* pdispheader = reinterpret_cast<ddispheader_t*>(pbuffer);
-		pdispheader->num_dispinfos = g_numdispinfo;
-		pdispheader->num_dispverts = g_numdispverts;
-		pdispheader->num_faces = g_numfaces;
-
-		byte* pdata = pbuffer + headersize;
-		memcpy(pdata, g_ddispinfo, infosize);
-		pdata += infosize;
-		memcpy(pdata, g_ddispverts, vertsize);
-		pdata += vertsize;
-		memcpy(pdata, g_dfacedispmap, mapsize);
-
-		AddLump(LUMP_DISPLACEMENTS, pbuffer, totalsize, header, bspfile);
-		free(pbuffer);
-	}
+	AddDisplacementLump(LUMP_DISPLACEMENTS, header, bspfile);
 
     fseek(bspfile, 0, SEEK_SET);
     SafeWrite(bspfile, header, sizeof(dheader_t));
