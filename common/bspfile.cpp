@@ -621,16 +621,14 @@ void            LoadBSPImage(dheader_t* const header)
 	if(header->lumps[LUMP_LIGHTING_VECTORS].filelen)
 		CopyLightingLump(LUMP_LIGHTING_VECTORS, g_dlightdata_vectors, 1, header, g_dlightdata_vectors_compression, g_dlightdata_vectors_compression_level, g_lightdatasize_vectors_actual);
 
-	if(header->flags & PBSPV2_FL_HAS_VERTEX_LIGHTING)
+	if((header->flags & PBSPV2_FL_HAS_VERTEX_LIGHTING)
+		&& header->lumps[LUMP_VERTEX_LIGHTING_AMBIENT].filelen
+		&& header->lumps[LUMP_VERTEX_LIGHTING_DIFFUSE].filelen
+		&& header->lumps[LUMP_VERTEX_LIGHTING_VECTORS].filelen)
 	{
-		if (header->lumps[LUMP_VERTEX_LIGHTING_AMBIENT].filelen)
-			CopyLightingLump(LUMP_VERTEX_LIGHTING_AMBIENT, g_dvertexlightdata_ambient, 1, header, g_dvertexlightdata_ambient_compression, g_dvertexlightdata_ambient_compression_level, g_dvertexlightdatasize_ambient_actual);
-
-		if (header->lumps[LUMP_VERTEX_LIGHTING_DIFFUSE].filelen)
-			CopyLightingLump(LUMP_VERTEX_LIGHTING_DIFFUSE, g_dvertexlightdata_diffuse, 1, header, g_dvertexlightdata_diffuse_compression, g_dvertexlightdata_diffuse_compression_level, g_dvertexlightdatasize_diffuse_actual);
-
-		if (header->lumps[LUMP_VERTEX_LIGHTING_VECTORS].filelen)
-			CopyLightingLump(LUMP_VERTEX_LIGHTING_VECTORS, g_dvertexlightdata_vectors, 1, header, g_dvertexlightdata_vectors_compression, g_dvertexlightdata_vectors_compression_level, g_dvertexlightdatasize_vectors_actual);
+		g_dvertexlightdatasize = CopyLightingLump(LUMP_VERTEX_LIGHTING_AMBIENT, g_dvertexlightdata_ambient, 1, header, g_dvertexlightdata_ambient_compression, g_dvertexlightdata_ambient_compression_level, g_dvertexlightdatasize_ambient_actual);
+		CopyLightingLump(LUMP_VERTEX_LIGHTING_DIFFUSE, g_dvertexlightdata_diffuse, 1, header, g_dvertexlightdata_diffuse_compression, g_dvertexlightdata_diffuse_compression_level, g_dvertexlightdatasize_diffuse_actual);
+		CopyLightingLump(LUMP_VERTEX_LIGHTING_VECTORS, g_dvertexlightdata_vectors, 1, header, g_dvertexlightdata_vectors_compression, g_dvertexlightdata_vectors_compression_level, g_dvertexlightdatasize_vectors_actual);
 	}
 
 	if(header->flags & PBSPV2_FL_HAS_LIGHTGRID_DATA)

@@ -427,7 +427,7 @@ void GatherGridPointLight( const vec3_t pos, const byte* const pvs, lightgrid_sa
 			{
 				for (; l; l = l->next)
 				{
-					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, nullptr, 1.0, add_styles, step, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, false, true, false);
+					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, nullptr, 1.0, add_styles, step, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, false, true, SOFTSKY_MINIMAL);
 				}
 			}
 		}
@@ -446,7 +446,7 @@ void GatherGridPointLight( const vec3_t pos, const byte* const pvs, lightgrid_sa
 			if (l && (i == 0 ? g_sky_lighting_fix : pvs[(i - 1) >> 3] & (1 << ((i - 1) & 7))))
 			{
 				for (; l; l = l->next)
-					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, nullptr, 1.0, add_styles, step, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, true, true, false);
+					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, nullptr, 1.0, add_styles, step, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, true, true, SOFTSKY_MINIMAL);
 			}
 		}
 	}
@@ -808,6 +808,8 @@ void MakeOctreeLump( void )
 				{
 					int sampleindex = LightGrid_GetGridIndex(x, y, z);
 					lightgrid_sample_t& sample = g_lightGridSamplesVector[sampleindex];
+					if(sample.occluded)
+						continue;
 
 					int j = 0;
 					for(; j < MAXLIGHTMAPS; j++)
@@ -1105,9 +1107,14 @@ void MakeOctreeLump( void )
 	memcpy(pdestdata, psampledata[LIGHTGRID_LAYER_VECTORS], sizeof(byte)*pheader->vectorscompressedsize);
 
 	// Sanity check
-	assert(sampleindexoffset == storedcellcount);
-	assert(rawsampledataoffset == rawsampledatasize);
-	assert(dataoffset == lumpdatasize);
+	if(sampleindexoffset != storedcellcount)
+		Error("Mismatch between stored sample count and final count(%d vs %d)", sampleindexoffset, storedcellcount);
+
+	if(rawsampledataoffset != rawsampledatasize)
+		Error("Mismatch between estimated raw sample data size and final output size(%d vs %d)", rawsampledatasize, rawsampledataoffset);
+
+	if(dataoffset != lumpdatasize)
+		Error("Mismatch between estimated lightgrid lump data size and final output size(%d vs %d)", lumpdatasize, dataoffset);
 
 	for(int i = 0; i < NB_LIGHTGRID_DATA_LAYERS; i++)
 		delete[] psampledata[i];

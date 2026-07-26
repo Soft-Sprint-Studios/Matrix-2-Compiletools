@@ -326,22 +326,76 @@ bool            TestSegmentAgainstOpaqueList(const vec_t* p1, const vec_t* p2
 	VectorFill (scaleout, 1.0);
 	opaquestyleout = -1;
 
+	// Calculate the mins/maxs of the trace
+	vec3_t traceMins, traceMaxs;
+	for(int i = 0; i < 3; i++)
+	{
+		traceMins[i] = MAX_FLOAT_VALUE;
+		traceMaxs[i] = -MAX_FLOAT_VALUE;
+	}
+
+	for(int i = 0; i < 2; i++)
+	{
+		vec3_t tmp;
+		if(i == 0)
+		{
+			VectorCopy(p1, tmp);
+		}
+		else
+		{
+			VectorCopy(p2, tmp);
+		}
+
+		for(int j = 0; j < 3; j++)
+		{
+			if(tmp[j] < traceMins[j])
+				traceMins[j] = tmp[j];
+				
+			if(tmp[j] > traceMaxs[j])
+				traceMaxs[j] = tmp[j];			
+		}
+	}
+
+	vec3_t start, end;
+	VectorCopy(p2, start);
+	VectorCopy(p1, end);
+
+	// This is for testing against the 
+	vec3_t normdirection;
+	VectorSubtract(end, start, normdirection);
+	VectorNormalize(normdirection);
+
     for (x = 0; x < g_opaque_face_count; x++)
 	{
-		if (!TestLineOpaque (g_opaque_face_list[x].modelnum, g_opaque_face_list[x].origin, p1, p2))
+		opaqueList_t &entity = g_opaque_face_list[x];
+		opaquemodel_t *thismodel = &opaquemodels[entity.modelnum];
+
+		// Turn entity mins/maxs into
+		vec3_t mins, maxs;
+		VectorAdd(entity.origin, thismodel->mins, mins);
+		VectorAdd(entity.origin, thismodel->maxs, maxs);
+
+		// Less precise but cheap check
+		if(CheckMinsMaxs(traceMins, traceMaxs, mins, maxs))
+			continue;
+
+		// A bit more accurate
+		if(!IntersectBBoxPoint(start, end, mins, maxs, normdirection))
+			continue;
+
+		// Now do the actual collision check
+		if (!TestLineOpaque (entity.modelnum, entity.origin, p1, p2))
+			continue;
+
+		if (entity.transparency)
 		{
+			VectorMultiply (scaleout, entity.transparency_scale, scaleout);
 			continue;
 		}
 
-		if (g_opaque_face_list[x].transparency)
+		if (entity.style != -1 && (opaquestyleout == -1 || entity.style == opaquestyleout))
 		{
-			VectorMultiply (scaleout, g_opaque_face_list[x].transparency_scale, scaleout);
-			continue;
-		}
-
-		if (g_opaque_face_list[x].style != -1 && (opaquestyleout == -1 || g_opaque_face_list[x].style == opaquestyleout))
-		{
-			opaquestyleout = g_opaque_face_list[x].style;
+			opaquestyleout = entity.style;
 			continue;
 		}
 
@@ -352,45 +406,8 @@ bool            TestSegmentAgainstOpaqueList(const vec_t* p1, const vec_t* p2
 
 	if(g_vbmshadows && !novbm)
 	{
-		vec3_t traceMins, traceMaxs;
-		for(int i = 0; i < 3; i++)
-		{
-			traceMins[i] = MAX_FLOAT_VALUE;
-			traceMaxs[i] = -MAX_FLOAT_VALUE;
-		}
-
-		for(int i = 0; i < 2; i++)
-		{
-			vec3_t tmp;
-			if(i == 0)
-			{
-				VectorCopy(p1, tmp);
-			}
-			else
-			{
-				VectorCopy(p2, tmp);
-			}
-
-			for(int j = 0; j < 3; j++)
-			{
-				if(tmp[j] < traceMins[j])
-					traceMins[j] = tmp[j];
-				
-				if(tmp[j] > traceMaxs[j])
-					traceMaxs[j] = tmp[j];			
-			}
-		}
-
 		vec3_t local_start;
 		vec3_t local_end;
-
-		vec3_t start, end;
-		VectorCopy(p2, start);
-		VectorCopy(p1, end);
-
-		vec3_t normdirection;
-		VectorSubtract(end, start, normdirection);
-		VectorNormalize(normdirection);
 
 		for(int i = 0; i < g_numEntityLightingInfos; i++)
 		{
@@ -400,16 +417,18 @@ bool            TestSegmentAgainstOpaqueList(const vec_t* p1, const vec_t* p2
 			if(entityinfo.bvhindex == -1)
 				continue;
 
-			// Check if ray intersects mins/maxs
+			// Check if ray intersects mins/maxs, this is a less precise check
 			const vec3_t& mins = entityinfo.bvhmins;
 			const vec3_t& maxs = entityinfo.bvhmaxs;
 			if(CheckMinsMaxs(traceMins, traceMaxs, mins, maxs))
 				continue;
 
-			if(!LineSegmentIntersectsBounds(p1, p2, mins, maxs))
+			// A bit more accurate
+			if(!IntersectBBoxPoint(start, end, mins, maxs, normdirection))
 				continue;
 
-			if(!IntersectBBoxPoint(start, end, mins, maxs, normdirection))
+			// This highly accurate but costly
+			if(!LineSegmentIntersectsBounds(p1, p2, mins, maxs))
 				continue;
 
 			// Transform ray to local space

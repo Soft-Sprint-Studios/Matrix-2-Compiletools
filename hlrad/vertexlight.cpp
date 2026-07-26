@@ -18,6 +18,9 @@ All Rights Reserved.
 #include "md5.h"
 #include "vertexlight.h"
 
+// TODO: Consider light_origin
+// TODO: Consider seqname
+
 // Mod directory
 extern char				g_modDir[_MAX_PATH];
 // Direct lights
@@ -72,6 +75,11 @@ void LoadEntityVBMModels( void )
 		if(pstr && strlen(pstr) > 0)
 			continue;
 
+		// Fetch parent. If it's there, we can't use this entity
+		pstr = ValueForKey(pentity, "parent");
+		if(pstr && strlen(pstr) > 0)
+			continue;
+
 		// Get model
 		pstr = ValueForKey(pentity, "model");
 		if(!pstr || strlen(pstr) <= 0)
@@ -91,6 +99,21 @@ void LoadEntityVBMModels( void )
 		int sequence = IntForKey(pentity, "sequence");
 		if(sequence && sequence > pcache->pstudiohdr->numseq)
 			sequence = 0;
+
+		// seqname overrides sequence
+		pstr = ValueForKey(pentity, "seqname");
+		if(pstr)
+		{
+			for(int i = 0; i < pcache->pstudiohdr->numseq; i++)
+			{
+				const mstudioseqdesc_t* pseqdesc = pcache->pstudiohdr->getSequence(i);
+				if(!strcmpi(pseqdesc->label, pstr))
+				{
+					sequence = i;
+					break;
+				}
+			}
+		}
 
 		vec3_t origin;
 		GetVectorForKey(pentity, "origin", origin);
@@ -598,20 +621,17 @@ void GatherVertexLight(const vec3_t pos, const byte* const pvs, const vec3_t nor
 
 	// First do direct lighting and collect strongest light directions
 	// from all light sources
-	for (int step = 0; step < 2; step++)
+	for (i = 0; i < 1 + g_dmodels[0].visleafs; i++)
 	{
-		for (i = 0; i < 1 + g_dmodels[0].visleafs; i++)
-		{
-			directlight_t* l = directlights[i];
-			if (!l)
-				continue;
+		directlight_t* l = directlights[i];
+		if (!l)
+			continue;
 
-			if (i == 0 ? g_sky_lighting_fix : pvs[(i - 1) >> 3] & (1 << ((i - 1) & 7)))
+		if (i == 0 ? g_sky_lighting_fix : pvs[(i - 1) >> 3] & (1 << ((i - 1) & 7)))
+		{
+			for (; l; l = l->next)
 			{
-				for (; l; l = l->next)
-				{
-					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, 1.0, add_styles, step, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, false, true, false);
-				}
+				AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, 1.0, add_styles, 0, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, false, true, SOFTSKY_MINIMAL);
 			}
 		}
 	}
@@ -621,16 +641,13 @@ void GatherVertexLight(const vec3_t pos, const byte* const pvs, const vec3_t nor
 		VectorNormalize(directions[i]);
 
 	// Now calculate the ambient and direct lighting based on the dominant light vector
-	for (int step = 0; step < 2; step++)
+	for (i = 0; i < 1 + g_dmodels[0].visleafs; i++)
 	{
-		for (i = 0; i < 1 + g_dmodels[0].visleafs; i++)
+		directlight_t* l = directlights[i];
+		if (l && (i == 0 ? g_sky_lighting_fix : pvs[(i - 1) >> 3] & (1 << ((i - 1) & 7))))
 		{
-			directlight_t* l = directlights[i];
-			if (l && (i == 0 ? g_sky_lighting_fix : pvs[(i - 1) >> 3] & (1 << ((i - 1) & 7))))
-			{
-				for (; l; l = l->next)
-					AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, 1.0, add_styles, step, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, true, true, false);
-			}
+			for (; l; l = l->next)
+				AddLight(l, directLightTraceBitset, directLightTraceSetBitset, envLightsBitset, envLightsTraceSetBitset, skyLightsBitset, skyLightsTraceSetBitset, directions, pos, pvs, normal, 1.0, add_styles, 0, 0, -1, adds, adds_ambient, adds_diffuse, NULL, NULL, true, true, SOFTSKY_MINIMAL);
 		}
 	}
 
@@ -651,17 +668,17 @@ void GatherVertexLight(const vec3_t pos, const byte* const pvs, const vec3_t nor
 		// Do not use normal here, as it's better looking to distribute lighting
 		// across all vertices regardless of facing
 		float dot_rec =  1 / d; 
-		if(dot_rec < 0)
+		if(dot_rec < 0.001)
 			continue;
 
 		vec3_t planeNormal;
 		VectorCopy(getPlaneFromFaceNumber(p->faceNumber)->normal, planeNormal);
 		float dot_em = -DotProduct(v_delta, planeNormal) / d;
-		if(dot_em < 0)
+		if(dot_em < 0.001)
 			continue;
 
 		float scale = (dot_rec * dot_em * p->area) / (Q_PI * d2 + p->area);
-		if(scale <= 0)
+		if(scale < 0.001)
 			continue;
 
 		if (TestLine(pos, p->origin) != CONTENTS_EMPTY)

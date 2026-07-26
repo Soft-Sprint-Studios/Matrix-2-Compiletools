@@ -1062,6 +1062,110 @@ unsigned int    CountEngineEntities()
 }
 
 // =====================================================================================
+//  SetParentOffsets
+//      Go through all entities and check which ones have a parent. If they do, then
+//      set the offset from the parent origin
+// =====================================================================================
+void SetParentOffsets( void )
+{
+	char szValue[MAXTOKEN];
+	for(int i = 0; i < g_numentities; i++)
+	{
+		entity_t* pmapent = &g_entities[i];
+
+		const char* pstrParentName = ValueForKey (pmapent, "parent");
+		if(!pstrParentName || !strlen(pstrParentName))
+			continue;
+
+		vec3_t entityorigin;
+		const char* pstrValue = ValueForKey (pmapent, "origin");
+		if(!pstrValue || !strlen(pstrValue))
+		{
+#if 1
+			Error("Parented entity %d with classname '%s' has no origin brush.\n", i, ValueForKey(pmapent, "classname"));
+#else
+			// If no origin is set, then set the center of the bbox
+			vec3_t entmins, entmaxs;
+			for(int j = 0; j < 3; j++)
+			{
+				entmins[j] = MAX_FLOAT_VALUE;
+				entmaxs[j] = -MAX_FLOAT_VALUE;
+			}
+
+			for(int j = 0; j < pmapent->numbrushes; j++)
+			{
+				brush_t* pbrush = &g_mapbrushes[pmapent->firstbrush + j];
+
+				int savedcontents = pbrush->contents;
+				pbrush->contents = CONTENTS_SOLID;
+				CreateBrush(pmapent->firstbrush + j);     // to get sizes
+				pbrush->contents = savedcontents;
+
+				for(int k = 0; k < 3; k++)
+				{
+					if(pbrush->hulls[0].bounds.m_Mins[k] < entmins[k])
+						entmins[k] = pbrush->hulls[0].bounds.m_Mins[k];
+
+					if(pbrush->hulls[0].bounds.m_Maxs[k] > entmaxs[k])
+						entmaxs[k] = pbrush->hulls[0].bounds.m_Maxs[k];
+				}
+			}
+
+            VectorAdd(entmins, entmaxs, entityorigin);
+            VectorScale(entityorigin, 0.5, entityorigin);
+
+            safe_snprintf(szValue, MAXTOKEN, "%lf %lf %lf", entityorigin[0], entityorigin[1], entityorigin[2]);
+            SetKeyValue(pmapent, "origin", szValue);
+#endif
+		}
+		else
+		{
+			sscanf(pstrValue, "%lf %lf %lf", &entityorigin[0], &entityorigin[1], &entityorigin[2]);
+		}
+
+		entity_t* pparentmapent = nullptr;
+		for(int j = 0; j < g_numentities; j++)
+		{
+			if(j == 1)
+				continue;
+
+			entity_t* pcheckentity = &g_entities[j];
+			const char* pstrCheckTargetname = ValueForKey(pcheckentity, "targetname");
+			if(!pstrCheckTargetname || !strlen(pstrCheckTargetname))
+				continue;
+
+			if(!strcmp(pstrParentName, pstrCheckTargetname))
+			{
+				pparentmapent = pcheckentity;
+				break;
+			}
+		}
+
+		if(!pparentmapent)
+		{
+			Error("Parent '%s' of entity %d not found.\n", pstrParentName, i);
+			continue;
+		}
+
+		pstrValue = ValueForKey (pparentmapent, "origin");
+		if(!pstrValue || !strlen(pstrValue))
+		{
+			Error("Parent '%s' of entity %d with classname '%s' has no origin brush.\n", pstrParentName, i, ValueForKey(pmapent, "classname"));
+			continue;
+		}
+
+		vec3_t parentorigin;
+		sscanf(pstrValue, "%lf %lf %lf", &parentorigin[0], &parentorigin[1], &parentorigin[2]);
+
+		vec3_t parentoffset;
+		VectorSubtract(entityorigin, parentorigin, parentoffset);
+
+		sprintf(szValue, "%lf %lf %lf", parentoffset[0], parentoffset[1], parentoffset[2]);
+		SetKeyValue(pmapent, "parentoffset", szValue);
+	}
+}
+
+// =====================================================================================
 //  LoadMapFile
 //      wrapper for LoadScriptFile
 //      parse in script entities
@@ -1081,6 +1185,8 @@ void            LoadMapFile(const char* const filename)
     {
 		g_numparsedentities++;
     }
+
+	SetParentOffsets();
 
     // AJM debug
     /*
