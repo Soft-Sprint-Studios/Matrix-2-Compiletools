@@ -1136,10 +1136,16 @@ static surfchain_t* ReadSurfs(FILE* file)
     {
 		if (file == polyfiles[2] && g_nohull2)
 			break;
+        char linebuf[1024];
+        if (!fgets(linebuf, sizeof(linebuf), file))
+        {
+            return NULL;
+        }
+
         line++;
         int face_id = -1;
-        r = fscanf(file, "%i %i %i %i %i %i\n", &detaillevel, &planenum, &g_texinfo, &contents, &numpoints, &face_id);
-        if (r == 0 || r == -1)
+        r = sscanf(linebuf, "%i %i %i %i %i %i", &detaillevel, &planenum, &g_texinfo, &contents, &numpoints, &face_id);
+        if (r <= 0)
         {
             return NULL;
         }
@@ -1148,10 +1154,9 @@ static surfchain_t* ReadSurfs(FILE* file)
             Developer(DEVELOPER_LEVEL_MEGASPAM, "inaccuracy: average %.8f max %.8f\n", inaccuracy_total / inaccuracy_count, inaccuracy_max);
             break;
         }
-        if (r == 5) face_id = -1;
-        else if (r != 6)
+        if (r < 5)
         {
-            Error("ReadSurfs (line %i): scanf failure", line);
+            Error("ReadSurfs (line %i): sscanf failure", line);
         }
         if (numpoints > MAXPOINTS)
         {
@@ -1259,9 +1264,13 @@ static brush_t *ReadBrushes (FILE *file)
             int planenum;
             int numpoints;
             int face_id = -1;
-            r = fscanf(file, "%i %u %i\n", &planenum, &numpoints, &face_id);
-            if (r == 2) face_id = -1;
-            else if (r != 3)
+            char sidebuf[1024];
+            if (!fgets(sidebuf, sizeof(sidebuf), file))
+            {
+                Error("ReadBrushes: unexpected EOF");
+            }
+            r = sscanf(sidebuf, "%i %u %i", &planenum, &numpoints, &face_id);
+            if (r < 2)
             {
                 Error("ReadBrushes: get side failed");
             }
