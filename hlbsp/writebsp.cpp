@@ -221,8 +221,8 @@ static int		WriteDrawLeaf (node_t *node, const node_t *portalleaf)
 	}
 	for (int k = 0; k < 3; k++)
 	{
-		leaf_p->mins[k] = (short)qmax (-32767, qmin ((int)mins[k], 32767));
-		leaf_p->maxs[k] = (short)qmax (-32767, qmin ((int)maxs[k], 32767));
+		leaf_p->mins[k] = (int)qmax(-65535, qmin((int)mins[k], 65535));
+		leaf_p->maxs[k] = (int)qmax(-65535, qmin((int)maxs[k], 65535));
 	}
 
     leaf_p->visofs = -1;                                   // no vis info yet
@@ -400,8 +400,8 @@ static int WriteDrawNodes_r (node_t *node, const node_t *portalleaf)
 	}
 	for (int k = 0; k < 3; k++)
 	{
-		n->mins[k] = (short)qmax (-32767, qmin ((int)mins[k], 32767));
-		n->maxs[k] = (short)qmax (-32767, qmin ((int)maxs[k], 32767));
+		n->mins[k] = (int)qmax(-65535, qmin((int)mins[k], 65535));
+		n->maxs[k] = (int)qmax(-65535, qmin((int)maxs[k], 65535));
 	}
 
     if (node->planenum & 1)

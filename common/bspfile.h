@@ -75,19 +75,13 @@
 #define TEXTURE_STEP        16 // this constant was previously defined in lightmap.cpp. --vluzacn
 #define MAX_SURFACE_EXTENT  16 // if lightmap extent exceeds 16, the map will not be able to load in 'Software' renderer and HLDS. //--vluzacn
 
-#define ENGINE_ENTITY_RANGE 32768
+#define ENGINE_ENTITY_RANGE 65536
 //=============================================================================
 
 #define PBSP_HEADER						(('P'<<24)+('S'<<16)+('B'<<8)+'P')
-#define PBSP_VERSION					2
+#define PBSP_VERSION					3
 
 #define TOOLVERSION 2
-
-#define PBSPV2_FL_HAS_SMOOTHING_GROUPS  (1<<0)
-#define PBSPV2_FL_HAS_VERTEX_LIGHTING   (1<<1)
-#define PBSPV2_FL_HAS_LIGHTGRID_DATA    (1<<2)
-#define PBSPV2_FL_HAS_DISPLACEMENT      (1<<3)
-#define PBSPV2_FL_HAS_CHECKSUM          (1<<4)
 
 //
 // BSP File Structures
@@ -219,8 +213,8 @@ typedef struct
 {
     int             planenum;
     int				children[2];                           // negative numbers are -(leafs+1), not nodes
-    short           mins[3];                               // for sphere culling
-    short           maxs[3];
+    int             mins[3];                               // for sphere culling
+    int             maxs[3];
     unsigned int	firstface;
     unsigned int	numfaces;                              // counting both sides
 }
@@ -283,8 +277,8 @@ typedef struct
     int             contents;
     int             visofs;                                // -1 = no visibility info
 
-    short           mins[3];                               // for frustum culling
-    short           maxs[3];
+    int             mins[3];                               // for frustum culling
+    int             maxs[3];
 
     unsigned int  firstmarksurface;
     unsigned int  nummarksurfaces;

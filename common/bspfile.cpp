@@ -346,8 +346,8 @@ static void     SwapBSPFile(const bool todisk)
         g_dnodes[i].planenum = LittleLong(g_dnodes[i].planenum);
         for (j = 0; j < 3; j++)
         {
-            g_dnodes[i].mins[j] = LittleShort(g_dnodes[i].mins[j]);
-            g_dnodes[i].maxs[j] = LittleShort(g_dnodes[i].maxs[j]);
+			g_dnodes[i].mins[j] = LittleLong(g_dnodes[i].mins[j]);
+			g_dnodes[i].maxs[j] = LittleLong(g_dnodes[i].maxs[j]);
         }
         g_dnodes[i].children[0] = LittleLong(g_dnodes[i].children[0]);
         g_dnodes[i].children[1] = LittleLong(g_dnodes[i].children[1]);
@@ -363,8 +363,8 @@ static void     SwapBSPFile(const bool todisk)
         g_dleafs[i].contents = LittleLong(g_dleafs[i].contents);
         for (j = 0; j < 3; j++)
         {
-            g_dleafs[i].mins[j] = LittleShort(g_dleafs[i].mins[j]);
-            g_dleafs[i].maxs[j] = LittleShort(g_dleafs[i].maxs[j]);
+			g_dleafs[i].mins[j] = LittleLong(g_dleafs[i].mins[j]);
+			g_dleafs[i].maxs[j] = LittleLong(g_dleafs[i].maxs[j]);
         }
 
         g_dleafs[i].firstmarksurface = LittleLong(g_dleafs[i].firstmarksurface);
@@ -621,29 +621,17 @@ void            LoadBSPImage(dheader_t* const header)
 	if(header->lumps[LUMP_LIGHTING_VECTORS].filelen)
 		CopyLightingLump(LUMP_LIGHTING_VECTORS, g_dlightdata_vectors, 1, header, g_dlightdata_vectors_compression, g_dlightdata_vectors_compression_level, g_lightdatasize_vectors_actual);
 
-	if((header->flags & PBSPV2_FL_HAS_VERTEX_LIGHTING)
-		&& header->lumps[LUMP_VERTEX_LIGHTING_AMBIENT].filelen
-		&& header->lumps[LUMP_VERTEX_LIGHTING_DIFFUSE].filelen
-		&& header->lumps[LUMP_VERTEX_LIGHTING_VECTORS].filelen)
+	g_dvertexlightdatasize = CopyLightingLump(LUMP_VERTEX_LIGHTING_AMBIENT, g_dvertexlightdata_ambient, 1, header, g_dvertexlightdata_ambient_compression, g_dvertexlightdata_ambient_compression_level, g_dvertexlightdatasize_ambient_actual);
+	CopyLightingLump(LUMP_VERTEX_LIGHTING_DIFFUSE, g_dvertexlightdata_diffuse, 1, header, g_dvertexlightdata_diffuse_compression, g_dvertexlightdata_diffuse_compression_level, g_dvertexlightdatasize_diffuse_actual);
+	CopyLightingLump(LUMP_VERTEX_LIGHTING_VECTORS, g_dvertexlightdata_vectors, 1, header, g_dvertexlightdata_vectors_compression, g_dvertexlightdata_vectors_compression_level, g_dvertexlightdatasize_vectors_actual);
+
+	if (header->lumps[LUMP_LIGHTGRID_DATA].filelen)
 	{
-		g_dvertexlightdatasize = CopyLightingLump(LUMP_VERTEX_LIGHTING_AMBIENT, g_dvertexlightdata_ambient, 1, header, g_dvertexlightdata_ambient_compression, g_dvertexlightdata_ambient_compression_level, g_dvertexlightdatasize_ambient_actual);
-		CopyLightingLump(LUMP_VERTEX_LIGHTING_DIFFUSE, g_dvertexlightdata_diffuse, 1, header, g_dvertexlightdata_diffuse_compression, g_dvertexlightdata_diffuse_compression_level, g_dvertexlightdatasize_diffuse_actual);
-		CopyLightingLump(LUMP_VERTEX_LIGHTING_VECTORS, g_dvertexlightdata_vectors, 1, header, g_dvertexlightdata_vectors_compression, g_dvertexlightdata_vectors_compression_level, g_dvertexlightdatasize_vectors_actual);
+		g_dlightgriddata = new byte[header->lumps[LUMP_LIGHTGRID_DATA].filelen];
+		g_dlightgriddatasize = CopyLump(LUMP_LIGHTGRID_DATA, g_dlightgriddata, 1, header);
 	}
 
-	if(header->flags & PBSPV2_FL_HAS_LIGHTGRID_DATA)
-	{
-		if (header->lumps[LUMP_LIGHTGRID_DATA].filelen)
-		{
-			g_dlightgriddata = new byte[header->lumps[LUMP_LIGHTGRID_DATA].filelen];
-			g_dlightgriddatasize = CopyLump(LUMP_LIGHTGRID_DATA, g_dlightgriddata, 1, header);
-		}
-	}
-
-	if (header->flags & PBSPV2_FL_HAS_DISPLACEMENT)
-	{
-		CopyDisplacementLump(LUMP_DISPLACEMENTS, header);
-	}
+	CopyDisplacementLump(LUMP_DISPLACEMENTS, header);
 
     Free(header);                                          // everything has been copied out
 
@@ -832,7 +820,7 @@ void            WriteBSPFile(const char* const filename)
 
 	header->id = PBSP_HEADER;
 	header->version = LittleLong(PBSP_VERSION);
-	header->flags |= (PBSPV2_FL_HAS_VERTEX_LIGHTING|PBSPV2_FL_HAS_LIGHTGRID_DATA|PBSPV2_FL_HAS_DISPLACEMENT|PBSPV2_FL_HAS_CHECKSUM);
+	header->flags = 0;
 
     bspfile = SafeOpenWrite(filename);
     SafeWrite(bspfile, header, sizeof(dheader_t));         // overwritten later

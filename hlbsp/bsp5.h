@@ -21,7 +21,7 @@
 #define ENTITIES_VOID "entities.void"
 #define ENTITIES_VOID_EXT ".void"
 
-#define	BOGUS_RANGE	144000
+#define	BOGUS_RANGE	262144
 
 // the exact bounding box of the brushes is expanded some for the headnode
 // volume.  is this still needed?
