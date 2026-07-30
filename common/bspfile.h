@@ -417,6 +417,7 @@ struct ddispheader_t
 
 struct ddispinfo_t
 {
+    char texture2[32];
     int face_index;
     int power;
     int vert_start;

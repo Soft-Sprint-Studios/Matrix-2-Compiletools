@@ -243,6 +243,7 @@ void LoadMapDisp(const char* filename)
             di->face_index = -1;
             di->power = 0;
             di->vert_start = g_numdispverts;
+            di->texture2[0] = '\0';
             vec3_t start_position = { 0.0f, 0.0f, 0.0f };
             for (int c = 0; c < 4; c++)
                 di->corners[c][0] = di->corners[c][1] = di->corners[c][2] = 0.0f;
@@ -310,6 +311,11 @@ void LoadMapDisp(const char* filename)
                         GetToken(false);
                         g_ddispverts[di->vert_start + i].alpha = (float)atof(g_token);
                     }
+                }
+                else if (!strcmp(g_token, "texture2"))
+                {
+                    GetToken(false);
+                    safe_strncpy(di->texture2, g_token, sizeof(di->texture2));
                 }
             }
 
