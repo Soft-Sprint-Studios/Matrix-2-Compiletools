@@ -299,7 +299,7 @@ void LoadMapDisp(const char* filename)
                     for (int i = 0; i < count; i++)
                     {
                         GetToken(false);
-                        g_ddispverts[g_numdispverts++].dist = (float)atof(g_token);
+                        g_ddispverts[g_numdispverts++].distance = (float)atof(g_token);
                     }
                 }
                 else if (!strcmp(g_token, "alphas"))

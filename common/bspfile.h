@@ -427,7 +427,7 @@ struct ddispinfo_t
 struct ddispvert_t
 {
     float vector[3];
-    float dist;
+    float distance;
     float alpha;
 };
 
