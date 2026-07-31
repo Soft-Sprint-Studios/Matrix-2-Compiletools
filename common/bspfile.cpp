@@ -1652,6 +1652,176 @@ void DeleteEmbeddedLightmaps ()
 	}
 }
 
+// =====================================================================================
+//  LoadMapDisp
+// =====================================================================================
+void LoadMapDisp(const char* filename)
+{
+	char* buffer;
+	if (!q_exists(filename))
+	{
+		return;
+	}
+
+	int size = LoadFile(filename, &buffer);
+	ParseFromMemory(buffer, size);
+
+	g_numdispinfo = 0;
+	g_numdispverts = 0;
+	memset(g_dfacedispmap, -1, sizeof(g_dfacedispmap));
+
+	while (GetToken(true))
+	{
+		if (!strcmp(g_token, "{"))
+		{
+			ddispinfo_t* di = &g_ddispinfo[g_numdispinfo];
+			g_dispinfo_map_face_id[g_numdispinfo] = -1;
+			di->face_index = -1;
+			di->power = 0;
+			di->vert_start = g_numdispverts;
+			di->texture2[0] = '\0';
+			vec3_t start_position = { 0.0f, 0.0f, 0.0f };
+			for (int c = 0; c < 4; c++)
+				di->corners[c][0] = di->corners[c][1] = di->corners[c][2] = 0.0f;
+
+			while (GetToken(true) && strcmp(g_token, "}"))
+			{
+				if (!strcmp(g_token, "face_id"))
+				{
+					GetToken(false);
+					g_dispinfo_map_face_id[g_numdispinfo] = atoi(g_token);
+				}
+				else if (!strcmp(g_token, "power"))
+				{
+					GetToken(false);
+					di->power = atoi(g_token);
+				}
+				else if (!strcmp(g_token, "start_position"))
+				{
+					for (int i = 0; i < 3; i++)
+					{
+						GetToken(false);
+						start_position[i] = (float)atof(g_token);
+					}
+				}
+				else if (!strcmp(g_token, "corners"))
+				{
+					for (int c = 0; c < 4; c++)
+					{
+						for (int i = 0; i < 3; i++)
+						{
+							GetToken(false);
+							di->corners[c][i] = (float)atof(g_token);
+						}
+					}
+				}
+				else if (!strcmp(g_token, "vectors"))
+				{
+					int count = (1 << di->power) + 1;
+					count *= count;
+					for (int i = 0; i < count; i++)
+					{
+						for (int k = 0; k < 3; k++)
+						{
+							GetToken(false);
+							g_ddispverts[di->vert_start + i].vector[k] = (float)atof(g_token);
+						}
+					}
+				}
+				else if (!strcmp(g_token, "distances"))
+				{
+					int count = (1 << di->power) + 1;
+					count *= count;
+					for (int i = 0; i < count; i++)
+					{
+						GetToken(false);
+						g_ddispverts[g_numdispverts++].distance = (float)atof(g_token);
+					}
+				}
+				else if (!strcmp(g_token, "alphas"))
+				{
+					int count = (1 << di->power) + 1;
+					count *= count;
+					for (int i = 0; i < count; i++)
+					{
+						GetToken(false);
+						g_ddispverts[di->vert_start + i].alpha = (float)atof(g_token);
+					}
+				}
+				else if (!strcmp(g_token, "texture2"))
+				{
+					GetToken(false);
+					safe_strncpy(di->texture2, g_token, sizeof(di->texture2));
+				}
+			}
+
+			int start_index = 0;
+			float min_dist = 99999999.0f;
+			for (int c = 0; c < 4; c++)
+			{
+				vec3_t diff;
+				VectorSubtract(di->corners[c], start_position, diff);
+				float dist = sqrt(DotProduct(diff, diff));
+				if (dist < min_dist)
+				{
+					min_dist = dist;
+					start_index = c;
+				}
+			}
+
+			if (start_index != 0)
+			{
+				vec3_t temp[4];
+				for (int c = 0; c < 4; c++)
+					VectorCopy(di->corners[(start_index + c) % 4], temp[c]);
+				for (int c = 0; c < 4; c++)
+					VectorCopy(temp[c], di->corners[c]);
+
+				int N = 1 << di->power;
+				int K = N + 1;
+				ddispvert_t* temp_verts = (ddispvert_t*)malloc(K * K * sizeof(ddispvert_t));
+
+				for (int v = 0; v < K; v++)
+				{
+					for (int u = 0; u < K; u++)
+					{
+						temp_verts[v * K + u] = g_ddispverts[di->vert_start + v * K + u];
+					}
+				}
+
+				for (int v = 0; v < K; v++)
+				{
+					for (int u = 0; u < K; u++)
+					{
+						int src_u = u;
+						int src_v = v;
+						if (start_index == 1)
+						{
+							src_u = N - v;
+							src_v = u;
+						}
+						else if (start_index == 2)
+						{
+							src_u = N - u;
+							src_v = N - v;
+						}
+						else if (start_index == 3)
+						{
+							src_u = v;
+							src_v = N - u;
+						}
+						g_ddispverts[di->vert_start + v * K + u] = temp_verts[src_v * K + src_u];
+					}
+				}
+				free(temp_verts);
+			}
+
+			g_numdispinfo++;
+		}
+	}
+	free(buffer);
+}
+
 
 // =====================================================================================
 //  ParseEpair

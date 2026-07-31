@@ -573,6 +573,7 @@ extern void		GetFaceExtents (int facenum, int mins_out[2], int maxs_out[2]);
 extern int		ParseImplicitTexinfoFromTexture (int miptex);
 extern int		ParseTexinfoForFace (const dface_t *f);
 extern void		DeleteEmbeddedLightmaps ();
+extern void     LoadMapDisp(const char* filename);
 
 //
 // Entity Related Stuff

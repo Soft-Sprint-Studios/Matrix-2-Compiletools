@@ -59,6 +59,17 @@ void            SubdivideFace(face_t* f, face_t** prevptr)
         return; // ideally these should have their tex_special flag set, so its here jic
 	if (f->facestyle == face_discardable)
 		return;
+
+    if (f->face_id != -1)
+    {
+        for (int j = 0; j < g_numdispinfo; j++)
+        {
+            if (g_dispinfo_map_face_id[j] == f->face_id)
+            {
+                return;
+            }
+        }
+    }
 	
     float texturestep = TEXTURE_STEP / g_lightmapscale;
 

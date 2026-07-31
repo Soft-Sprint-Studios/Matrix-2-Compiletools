@@ -613,6 +613,25 @@ static bface_t* CopyFacesToOutside(brushhull_t* bh)
     return outside;
 }
 
+static bool IsDisplacementBrush(const brush_t* b)
+{
+    for (int i = 0; i < b->numsides; i++)
+    {
+        int face_id = g_brushsides[b->firstside + i].face_id;
+        if (face_id != -1)
+        {
+            for (int j = 0; j < g_numdispinfo; j++)
+            {
+                if (g_dispinfo_map_face_id[j] == face_id)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 // =====================================================================================
 //  CSGBrush
 // =====================================================================================
@@ -683,9 +702,18 @@ static void     CSGBrush(int brushnum)
 			{
 				continue;
 			}
-            overwrite = e->firstbrush + bn > brushnum;
-
             b2 = &g_mapbrushes[e->firstbrush + bn];
+
+            if (IsDisplacementBrush(b1) || IsDisplacementBrush(b2))
+            {
+                continue; // Do not clip or modify displacement brushes
+            }
+            if (b1->detaillevel > 0 && b2->detaillevel > 0)
+            {
+                continue; // Detail brushes do not clip each other
+            }
+
+            overwrite = e->firstbrush + bn > brushnum;
             bh2 = &b2->hulls[hull];
 			if (b2->contents == CONTENTS_TOEMPTY)
 				continue;
@@ -2233,6 +2261,9 @@ int             main(const int argc, char** argv)
     DefaultExtension(name, ".map");                  // might be .reg
     
     LoadMapFile(name);
+    char dispname[_MAX_PATH];
+    safe_snprintf(dispname, _MAX_PATH, "%s.mapdisp", g_Mapname);
+    LoadMapDisp(dispname);
     ThreadSetDefault();                    
     ThreadSetPriority(g_threadpriority);  
     Settings();
