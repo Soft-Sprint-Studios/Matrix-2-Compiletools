@@ -9,7 +9,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hlcsg", "hlcsg\hlcsg.vcxpro
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hlrad", "hlrad\hlrad.vcxproj", "{3B5F6C9B-1238-1ECF-14D8-01E4C3AB0EE1}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hlvis", "..\..\..\..\..\..\..\sourcesdk\pathos-public-main\pathos\sources\codesrc\utils\hlvis\hlvis.vcxproj", "{76051CAC-5741-AF85-0C95-3A214F58D9AD}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "hlvis", "hlvis\hlvis.vcxproj", "{76051CAC-5741-AF85-0C95-3A214F58D9AD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
