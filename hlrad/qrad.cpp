@@ -2845,6 +2845,9 @@ static void     RadWorld()
 	// Loaf VBM models for entities
 	LoadEntityVBMModels();
 
+	// Build displacement BVH
+	BuildDisplacementBVH();
+
     Log("\n");
 	
 	// generate a position map for each face
@@ -2952,6 +2955,7 @@ static void     RadWorld()
 
 	// Clear up VBM data cache
 	gVBMCache.Cleanup();
+	FreeDisplacementBVH();
 }
 
 // =====================================================================================

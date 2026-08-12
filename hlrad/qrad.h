@@ -21,6 +21,7 @@
 #include "compress.h"
 #include "cmdlinecfg.h"
 #include "aldformat.h"
+#include "disp.h"
 
 #ifdef SYSTEM_WIN32
 #pragma warning(disable: 4142 4028)

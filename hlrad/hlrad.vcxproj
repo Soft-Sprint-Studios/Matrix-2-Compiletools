@@ -282,6 +282,7 @@
     <ClCompile Include="..\common\threads.cpp" />
     <ClCompile Include="..\common\winding.cpp" />
     <ClCompile Include="compress.cpp" />
+    <ClCompile Include="disp.cpp" />
     <ClCompile Include="lerp.cpp" />
     <ClCompile Include="lightgrid.cpp" />
     <ClCompile Include="lightmap.cpp" />
@@ -324,6 +325,7 @@
     <ClInclude Include="..\common\mathlib.h" />
     <ClInclude Include="..\common\mathtypes.h" />
     <ClInclude Include="..\common\messages.h" />
+    <ClInclude Include="disp.h" />
     <ClInclude Include="lightgrid.h" />
     <ClInclude Include="qrad.h" />
     <ClInclude Include="..\common\scriplib.h" />

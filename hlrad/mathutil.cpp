@@ -404,6 +404,14 @@ bool            TestSegmentAgainstOpaqueList(const vec_t* p1, const vec_t* p2
 		return true;
 	}
 
+	// todo fix selfshadowing first
+	//if (TestLineDisplacement(p1, p2))
+	//{
+	//	VectorFill(scaleout, 0.0);
+	//	opaquestyleout = -1;
+	//	return true;
+	//}
+
 	if(g_vbmshadows && !novbm)
 	{
 		vec3_t local_start;
