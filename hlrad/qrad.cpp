@@ -1473,6 +1473,13 @@ static void     MakePatchForFace(const int fn, Winding* w, int style
 		VectorCopy (g_translucenttextures[g_texinfo[f->texinfo].miptex], patch->translucent_v);
 		patch->translucent_b = !VectorCompare (patch->translucent_v, vec3_origin);
         PlacePatchInside(patch);
+
+		vec3_t disp_spot, disp_normal;
+		if (GetDisplacementSample(fn, patch->origin, disp_spot, disp_normal))
+		{
+			VectorMA(disp_spot, PATCH_HUNT_OFFSET, disp_normal, patch->origin);
+		}
+
 		UpdateEmitterInfo (patch);
 
         g_face_patches[fn] = patch;

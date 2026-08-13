@@ -8,6 +8,7 @@
 #include "studio_util.h"
 #include "md5.h"
 #include "cbitset.h"
+#include "disp.h"
 
 edgeshare_t     g_edgeshare[MAX_MAP_EDGES];
 vec3_t          g_face_centroids[MAX_MAP_EDGES]; // BUG: should this be [MAX_MAP_FACES]?
@@ -4059,6 +4060,15 @@ void CalcLightmap (lightinfo_t *l, byte *styles)
 			VectorCopy(getPlaneFromFace(f)->normal, basenormal);
 
 			GetPhongNormal (surface, surfpt, pointnormal);
+
+			vec3_t disp_spot, disp_normal;
+			if (GetDisplacementSample(surface, surfpt, disp_spot, disp_normal))
+			{
+				VectorMA(disp_spot, DEFAULT_HUNT_OFFSET, disp_normal, spot);
+				VectorCopy(disp_normal, pointnormal);
+				VectorCopy(disp_normal, basenormal);
+			}
+
 			if (l->translucent_b)
 			{
 				VectorSubtract (vec3_origin, pointnormal, pointnormal2);

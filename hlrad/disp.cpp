@@ -1,3 +1,26 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2025-2026 Soft Sprint Studios
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 #include "disp.h"
 #include "bspfile.h"
 #include "mathlib.h"
@@ -112,9 +135,9 @@ void BuildDisplacementBVH()
                 for (int c = 0; c < 3; c++)
                 {
                     basePos[c] = (1.0f - u) * (1.0f - v) * di.corners[0][c] +
-                                 u * (1.0f - v) * di.corners[1][c] +
-                                 u * v * di.corners[2][c] +
-                                 (1.0f - u) * v * di.corners[3][c];
+                        u * (1.0f - v) * di.corners[1][c] +
+                        u * v * di.corners[2][c] +
+                        (1.0f - u) * v * di.corners[3][c];
                 }
 
                 int vertIdx = di.vert_start + y * K + x;
@@ -138,6 +161,7 @@ void BuildDisplacementBVH()
                 for (int triStep = 0; triStep < 2; triStep++)
                 {
                     disptriangle_t tri;
+                    tri.facenum = di.face_index;
                     if (triStep == 0)
                     {
                         VectorCopy(gridVerts[idx00], tri.v[0]);
@@ -190,7 +214,7 @@ void FreeDisplacementBVH()
     g_dispTriangles.clear();
 }
 
-static bool TestLineTriangle(const vec3_t start, const vec3_t dir, float maxDist, const disptriangle_t& tri)
+static bool IntersectRayTriangle(const vec3_t start, const vec3_t dir, float maxDist, const disptriangle_t& tri, float& out_t)
 {
     vec3_t edge1, edge2, h, s, q;
     VectorSubtract(tri.v[1], tri.v[0], edge1);
@@ -213,7 +237,63 @@ static bool TestLineTriangle(const vec3_t start, const vec3_t dir, float maxDist
         return false;
 
     float t = f * DotProduct(edge2, q);
-    return (t > 0.001f && t < maxDist - 0.001f);
+    if (t > 0.001f && t < maxDist - 0.001f)
+    {
+        out_t = t;
+        return true;
+    }
+    return false;
+}
+
+static bool TestLineTriangle(const vec3_t start, const vec3_t dir, float maxDist, const disptriangle_t& tri)
+{
+    float t;
+    if (IntersectRayTriangle(start, dir, maxDist, tri, t))
+    {
+        return (t > 1.0f && t < maxDist - 1.0f);
+    }
+    return false;
+}
+
+bool GetDisplacementSample(int facenum, const vec3_t base_spot, vec3_t out_spot, vec3_t out_normal)
+{
+    if (g_dispTriangles.empty() || g_dfacedispmap[facenum] == -1)
+        return false;
+
+    vec3_t base_normal;
+    VectorCopy(g_dplanes[g_dfaces[facenum].planenum].normal, base_normal);
+    if (g_dfaces[facenum].side) {
+        VectorSubtract(vec3_origin, base_normal, base_normal);
+    }
+
+    vec3_t start, dir;
+    VectorMA(base_spot, 8192.0f, base_normal, start);
+    VectorSubtract(vec3_origin, base_normal, dir);
+    float len = 16384.0f;
+
+    bool hit = false;
+    float best_t = MAX_FLOAT_VALUE;
+
+    for (size_t i = 0; i < g_dispTriangles.size(); i++)
+    {
+        const disptriangle_t& tri = g_dispTriangles[i];
+        if (tri.facenum != facenum)
+            continue;
+
+        float t;
+        if (IntersectRayTriangle(start, dir, len, tri, t))
+        {
+            if (t < best_t)
+            {
+                best_t = t;
+                VectorMA(start, t, dir, out_spot);
+                VectorCopy(tri.normal, out_normal);
+                hit = true;
+            }
+        }
+    }
+
+    return hit;
 }
 
 static bool IntersectBBoxPoint(const vec_t* start, const vec_t* end, const vec_t* bbmins, const vec_t* bbmaxs, const vec_t* normalDirection)
