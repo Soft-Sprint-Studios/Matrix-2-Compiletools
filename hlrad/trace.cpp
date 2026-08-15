@@ -420,8 +420,27 @@ int             TestLine(const vec3_t start, const vec3_t stop
 						 , vec_t *skyhit
 						 )
 {
+	if (TestLineDisplacement(start, stop))
+		return CONTENTS_SOLID;
+
+	vec3_t new_start;
+	VectorCopy(start, new_start);
+	if (PointInLeaf(new_start)->contents == CONTENTS_SOLID)
+	{
+		vec3_t dir;
+		VectorSubtract(stop, start, dir);
+		float len = VectorNormalize(dir);
+		float step = 4.0f;
+		while (len > 0.0f && PointInLeaf(new_start)->contents == CONTENTS_SOLID)
+		{
+			float d = qmin(step, len);
+			VectorMA(new_start, d, dir, new_start);
+			len -= d;
+		}
+	}
+
 	int linecontent = 0;
-    return TestLine_r(0, start, stop
+    return TestLine_r(0, new_start, stop
 		, linecontent
 		, skyhit
 		);

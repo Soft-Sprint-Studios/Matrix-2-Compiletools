@@ -4090,6 +4090,10 @@ void CalcLightmap (lightinfo_t *l, byte *styles)
 			else
 			{
 				dleaf_t *leaf = PointInLeaf(spot);
+				if (leaf->visofs == -1)
+				{
+					leaf = PointInLeaf(surfpt);
+				}
 				int thisoffset = leaf->visofs;
 				if (i == 0 || thisoffset != lastoffset)
 				{

@@ -1995,7 +1995,12 @@ static void     SortPatches()
 	for (unsigned x = 0; x < g_num_patches; x++)
 	{
 		patch_t *patch = &g_patches[x];
-		patch->leafnum = PointInLeaf (patch->origin) - g_dleafs;
+		dleaf_t* leaf = PointInLeaf(patch->origin);
+		if (leaf->contents == CONTENTS_SOLID && g_dfacedispmap[patch->faceNumber] != -1)
+		{
+			leaf = PointInLeaf(g_face_centroids[patch->faceNumber]);
+		}
+		patch->leafnum = leaf - g_dleafs;
 	}
 }
 
