@@ -59,6 +59,10 @@ static face_t*  TryMerge(face_t* f1, face_t* f2)
 	{
 		return NULL;
 	}
+    if (f1->face_id != -1 || f2->face_id != -1)
+    {
+        return NULL;
+    }
 
     //
     // find a common edge

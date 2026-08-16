@@ -48,6 +48,7 @@ brush_t *CopyCurrentBrush (entity_t *entity, const brush_t *brush)
 		pdest->td = psrc->td;
 		pdest->texinfo = psrc->texinfo;
 		pdest->treatasskip = psrc->treatasskip;
+		pdest->face_id = psrc->face_id;
 
 		if(psrc->ptempwinding)
 			pdest->ptempwinding = new Winding(*psrc->ptempwinding);

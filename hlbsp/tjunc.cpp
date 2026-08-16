@@ -504,6 +504,10 @@ static void     tjunc_find_r(node_t* node)
 
     for (f = node->faces; f; f = f->next)
     {
+        if (f->face_id != -1)
+        {
+            continue;
+        }
         AddFaceEdges(f);
     }
 
@@ -526,6 +530,12 @@ static void     tjunc_fix_r(node_t* node)
     for (f = node->faces; f; f = next)
     {
         next = f->next;
+        if (f->face_id != -1)
+        {
+            f->next = newlist;
+            newlist = f;
+            continue;
+        }
         FixFaceEdges(f);
     }
 
