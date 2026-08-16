@@ -487,17 +487,13 @@ void GatherGridPointLight( const vec3_t pos, const byte* const pvs, lightgrid_sa
 				d = 1.0f;
 
 			// Do not use normal here, as sample points don't have any
-			float dot_rec =  1 / d; 
-			if(dot_rec < 0)
-				continue;
-
 			vec3_t planeNormal;
 			VectorCopy(getPlaneFromFaceNumber(p->faceNumber)->normal, planeNormal);
 			float dot_em = -DotProduct(v_delta, planeNormal) / d;
-			if(dot_em < 0)
+			if (dot_em < 0.001)
 				continue;
 
-			float scale = (dot_rec * dot_em * p->area) / (Q_PI * d2 + p->area);
+			float scale = (dot_em * p->area) / (Q_PI * d2 + p->area);
 			if(scale <= 0)
 				continue;
 
@@ -513,6 +509,30 @@ void GatherGridPointLight( const vec3_t pos, const byte* const pvs, lightgrid_sa
 			VectorFill(transparency, 1);
 			opaquestyle = -1;
 	#endif
+			for (int j = 0; j < MAXLIGHTMAPS && p->directstyle[j] != 255; j++)
+			{
+				int bouncestyle = p->directstyle[j];
+				if (opaquestyle != -1)
+				{
+					if (bouncestyle == 0 || bouncestyle == opaquestyle)
+					{
+						bouncestyle = opaquestyle;
+					}
+					else
+					{
+						continue; 
+					}
+				}
+
+				vec_t dsamplebrightness = GetBrightestSample(adds[bouncestyle], adds_ambient[bouncestyle], adds_diffuse[bouncestyle]);
+				if(bouncestyle == 0 || dsamplebrightness > g_corings[bouncestyle] * 0.1)
+				{
+					vec3_t light_contrib, patch_add;
+					VectorMultiply(p->directlight[j], p->bouncereflectivity, light_contrib);
+					VectorMA(adds_ambient[bouncestyle], scale, light_contrib, patch_add);
+					VectorMultiply(patch_add, transparency, adds_ambient[bouncestyle]);
+				}
+			}
 			for (int j = 0; j < MAXLIGHTMAPS && p->totalstyle[j] != 255; j++)
 			{
 				// Account for opaque
@@ -536,8 +556,9 @@ void GatherGridPointLight( const vec3_t pos, const byte* const pvs, lightgrid_sa
 				vec_t dsamplebrightness = GetBrightestSample(adds[bouncestyle], adds_ambient[bouncestyle], adds_diffuse[bouncestyle]);
 				if(bouncestyle == 0 || dsamplebrightness > g_corings[bouncestyle] * 0.1)
 				{
-					vec3_t patch_add;
-					VectorMA(adds_ambient[bouncestyle], scale, p->totallight[j], patch_add);
+					vec3_t light_contrib, patch_add;
+					VectorMultiply(p->totallight[j], p->bouncereflectivity, light_contrib);
+					VectorMA(adds_ambient[bouncestyle], scale, light_contrib, patch_add);
 					VectorMultiply(patch_add, transparency, adds_ambient[bouncestyle]);
 				}
 			}
@@ -937,6 +958,7 @@ void MakeOctreeLump( void )
 						for(int k = 0; k < 3; k++)
 						{
 							float value = sample.light_ambient[j][k];
+							value *= g_colour_lightscale[k];
 							if (value < g_minlight)
 								value = g_minlight;
 
