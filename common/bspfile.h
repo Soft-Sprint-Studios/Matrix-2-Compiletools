@@ -85,6 +85,9 @@
 
 #define TOOLVERSION 2
 
+#define BSIDE_FL_PLANEBACK              (1<<0)
+#define BSIDE_FL_BEVEL                  (1<<1)
+
 //
 // BSP File Structures
 //
@@ -467,7 +470,7 @@ struct ddispvert_t
 struct dchecksum_t
 {
     uint64_t checksum;
-}
+};
 
 //============================================================================
 

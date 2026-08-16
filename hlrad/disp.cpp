@@ -247,6 +247,8 @@ static bool IntersectRayTriangle(const vec3_t start, const vec3_t dir, float max
 
 static bool TestLineTriangle(const vec3_t start, const vec3_t dir, float maxDist, const disptriangle_t& tri)
 {
+    if (tri.facenum >= 0 && tri.facenum < g_numfaces && g_face_entity[tri.facenum] != &g_entities[0])
+        return false;
     float t;
     if (IntersectRayTriangle(start, dir, maxDist, tri, t))
     {

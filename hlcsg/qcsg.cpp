@@ -646,7 +646,7 @@ static bool IsDisplacementBrush(const brush_t* b)
 {
     for (int i = 0; i < b->numsides; i++)
     {
-        int face_id = g_brushsides[b->firstside + i].face_id;
+        int face_id = g_mapbrushsides[b->firstside + i].face_id;
         if (face_id != -1)
         {
             for (int j = 0; j < g_numdispinfo; j++)
