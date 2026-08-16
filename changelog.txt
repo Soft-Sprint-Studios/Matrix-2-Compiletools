@@ -85,3 +85,4 @@
  - Fix baked vertex lighting distance epsilon issue causing incorrect positive traces against vbm models.
  - Add auto origin generation for child and parent entities without an origin brush.
  - Optimize light grid calculations on large open levels.
+ - Apply epsilon fix to alpha tested trace also in hlrad.
