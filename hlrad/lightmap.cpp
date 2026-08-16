@@ -2948,6 +2948,9 @@ void AddLight(directlight_t* l, CBitSet& directLightTraceBitset, CBitSet& direct
 			case SOFTSKY_ON:
 				softskylevel = SKYLEVEL_SOFTSKYON;
 				break;
+			case SOFTSKY_CHEAP:
+				softskylevel = SKYLEVEL_CHEAP;
+				break;
 			}
 
 			vec3_t sky_intensity;

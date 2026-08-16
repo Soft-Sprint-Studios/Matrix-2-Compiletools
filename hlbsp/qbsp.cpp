@@ -42,7 +42,9 @@ vec3_t          g_hull_size[NUM_HULLS][2] =
     }                                                     
 };
 static FILE*    polyfiles[NUM_HULLS];
-static FILE*    brushfiles[NUM_HULLS];
+static FILE*    detailbrushfiles[NUM_HULLS];
+static FILE*    brushfile;
+
 int             g_hullnum = 0;
 
 static face_t*  validfaces[MAX_INTERNAL_MAP_PLANES];
@@ -70,14 +72,17 @@ int             g_subdivide_size = DEFAULT_SUBDIVIDE_SIZE;
 float           g_lightmapscale = DEFAULT_LIGHTMAPSCALE;
 bool            g_bUseNullTex = DEFAULT_NULLTEX; // "-nonulltex"
 
+brush_t         g_mapbrushes[MAX_MAP_BRUSHES];
+int             g_nummapbrushes = 0;
 
+side_t          g_mapbrushsides[MAX_MAP_BRUSHSIDES];
+int             g_nummapbrushsides = 0;
 
 bool g_nohull2 = false;
 
 bool g_viewportal = false;
 
 dplane_t g_dplanes[MAX_INTERNAL_MAP_PLANES];
-
 
 // =====================================================================================
 //  GetParamsFromEnt
@@ -530,7 +535,11 @@ side_t *NewSideFromSide (const side_t *s)
 	side_t *news;
 	news = AllocSide ();
 	news->plane = s->plane;
-	news->w = new Winding (*s->w);
+    news->planenum = s->planenum;
+    news->bevel = s->bevel;
+    if(!news->bevel)
+	    news->w = new Winding (*s->w);
+
 	return news;
 }
 
@@ -539,6 +548,22 @@ brush_t *AllocBrush ()
 	brush_t *b;
 	b = (brush_t *)malloc (sizeof (brush_t));
 	memset (b, 0, sizeof (brush_t));
+	return b;
+}
+
+brush_t *AllocBrush (int numsides)
+{
+	brush_t *b;
+	b = (brush_t *)malloc (sizeof (brush_t));
+	memset (b, 0, sizeof (brush_t));
+
+	side_t **pnews = &b->sides;
+	for (int i = 0; i < numsides; i++)
+	{
+		*pnews = AllocSide();
+        pnews = &(*pnews)->next;
+	}
+
 	return b;
 }
 
@@ -561,6 +586,10 @@ brush_t *NewBrushFromBrush (const brush_t *b)
 {
 	brush_t *newb;
 	newb = AllocBrush ();
+    newb->original = b->original;
+    VectorCopy(b->mins, newb->mins);
+    VectorCopy(b->maxs, newb->maxs);
+
 	side_t *s, **pnews;
 	for (s = b->sides, pnews = &newb->sides; s; s = s->next, pnews = &(*pnews)->next)
 	{
@@ -575,7 +604,7 @@ void ClipBrush (brush_t **b, const dplane_t *split, vec_t epsilon)
 	Winding *w;
 	for (pnext = &(*b)->sides, s = *pnext; s; s = *pnext)
 	{
-		if (s->w->Clip (*split, false, epsilon))
+		if (!s->bevel && s->w->Clip (*split, false, epsilon))
 		{
 			pnext = &s->next;
 		}
@@ -585,6 +614,7 @@ void ClipBrush (brush_t **b, const dplane_t *split, vec_t epsilon)
 			FreeSide (s);
 		}
 	}
+
 	if (!(*b)->sides)
 	{ // empty brush
 		FreeBrush (*b);
@@ -611,21 +641,66 @@ void ClipBrush (brush_t **b, const dplane_t *split, vec_t epsilon)
 		s->next = (*b)->sides;
 		(*b)->sides = s;
 	}
+
+    ClearBounds((*b)->mins, (*b)->maxs);
+    for (s = (*b)->sides; s; s = s->next)
+    {
+        w = s->w;
+        for(int i = 0; i < w->m_NumPoints; i++)
+        {
+            for(int j = 0; j < 3; j++)
+            {
+                if((*b)->mins[j] > w->m_Points[i][j])
+                    (*b)->mins[j] = w->m_Points[i][j];
+
+                if((*b)->maxs[j] < w->m_Points[i][j])
+                    (*b)->maxs[j] = w->m_Points[i][j];
+            }
+        }
+    }
 	return;
 }
 
 void SplitBrush (brush_t *in, const dplane_t *split, brush_t **front, brush_t **back)
-	// 'in' will be freed
 {
 	in->next = NULL;
 	bool onfront;
 	bool onback;
+    bool coplanar;
 	onfront = false;
 	onback = false;
+    coplanar = false;
 	side_t *s;
+
 	for (s = in->sides; s; s = s->next)
 	{
-		switch (s->w->WindingOnPlaneSide (split->normal, split->dist, 2 * ON_EPSILON))
+        float dot = DotProduct(s->plane.normal, split->normal);
+        if(fabs(fabs(dot) - 1.0) < 0.00001f)
+        {
+            float distdiff;
+            if(dot > 0)
+                distdiff = s->plane.dist - split->dist;
+            else
+                distdiff = s->plane.dist + split->dist;
+
+            if(fabs(distdiff) < ON_EPSILON)
+            {
+                coplanar = true;
+                break;
+            }
+        }
+    }
+
+    if(coplanar)
+    {
+        *front = in;
+        *back = NewBrushFromBrush(in);
+		return;
+    }
+
+	for (s = in->sides; s; s = s->next)
+	{
+		switch (s->w->WindingOnPlaneSide (split->normal, split->dist, ON_EPSILON))
 		{
 		case SIDE_CROSS:
 			onfront = true;
@@ -640,29 +715,30 @@ void SplitBrush (brush_t *in, const dplane_t *split, brush_t **front, brush_t **
 		case SIDE_ON:
 			break;
 		}
+
 		if (onfront && onback)
 			break;
 	}
+
 	if (!onfront && !onback)
 	{
-		FreeBrush (in);
-		*front = NULL;
-		*back = NULL;
+		*front = in;
+		*back = NewBrushFromBrush (in);
 		return;
 	}
 	if (!onfront)
 	{
 		*front = NULL;
-		*back = in;
+		*back = NewBrushFromBrush (in);
 		return;
 	}
 	if (!onback)
 	{
-		*front = in;
+		*front = NewBrushFromBrush (in);
 		*back = NULL;
 		return;
 	}
-	*front = in;
+	*front = NewBrushFromBrush (in);
 	*back = NewBrushFromBrush (in);
 	dplane_t frontclip = *split;
 	dplane_t backclip = *split;
@@ -670,6 +746,128 @@ void SplitBrush (brush_t *in, const dplane_t *split, brush_t **front, brush_t **
 	backclip.dist = -backclip.dist;
 	ClipBrush (front, &frontclip, NORMAL_EPSILON);
 	ClipBrush (back, &backclip, NORMAL_EPSILON);
+	return;
+}
+
+int CountBrushSides( brush_t* b )
+{
+    int count = 0;
+    for(side_t* s = b->sides; s; s = s->next)
+        count++;
+
+    return count;
+}
+
+bool BrushHasValidWindings( brush_t* b )
+{
+    for(side_t* s = b->sides; s; s = s->next)
+    {
+        if(!s->w || s->w->m_NumPoints < 3)
+            return false;
+    }
+
+    return true;
+}
+
+void SplitBrush (brush_t *in, int planenum, brush_t **front, brush_t **back)
+{
+	in->next = NULL;
+	bool onfront;
+	bool onback;
+    bool coplanar;
+	onfront = false;
+	onback = false;
+    coplanar = false;
+	side_t *s;
+
+    const dplane_t *split = &g_dplanes[planenum];
+
+	for (s = in->sides; s; s = s->next)
+	{
+        if ((s->planenum & ~1) == (planenum & ~1))
+        {
+            coplanar = true;
+            break;
+        }
+    }
+
+    if(coplanar)
+    {
+        *front = NewBrushFromBrush(in);
+        *back = NewBrushFromBrush(in);
+        FreeBrush(in);
+		return;
+    }
+
+	for (s = in->sides; s; s = s->next)
+	{
+        if(s->bevel)
+            continue;
+
+		switch (s->w->WindingOnPlaneSide (split->normal, split->dist, ON_EPSILON))
+		{
+		case SIDE_CROSS:
+			onfront = true;
+			onback = true;
+			break;
+		case SIDE_FRONT:
+			onfront = true;
+			break;
+		case SIDE_BACK:
+			onback = true;
+			break;
+		case SIDE_ON:
+			break;
+		}
+
+		if (onfront && onback)
+			break;
+	}
+
+	if (!onfront && !onback)
+	{
+		*front = NewBrushFromBrush(in);
+		*back = NewBrushFromBrush (in);
+        FreeBrush(in);
+		return;
+	}
+	if (!onfront)
+	{
+		*front = NULL;
+		*back = NewBrushFromBrush (in);
+        FreeBrush(in);
+		return;
+	}
+	if (!onback)
+	{
+		*front = NewBrushFromBrush (in);
+		*back = NULL;
+        FreeBrush(in);
+		return;
+	}
+	*front = NewBrushFromBrush (in);
+	*back = NewBrushFromBrush (in);
+    FreeBrush(in);
+
+	dplane_t frontclip = *split;
+	dplane_t backclip = *split;
+	VectorSubtract (vec3_origin, backclip.normal, backclip.normal);
+	backclip.dist = -backclip.dist;
+	ClipBrush (front, &frontclip, NORMAL_EPSILON);
+	ClipBrush (back, &backclip, NORMAL_EPSILON);
+
+    if(*front && (CountBrushSides(*front) < 4 || !BrushHasValidWindings(*front)))
+    {
+        FreeBrush(*front);
+        *front = nullptr;
+    }
+
+    if(*back && (CountBrushSides(*back) < 4 || !BrushHasValidWindings(*back)))
+    {
+        FreeBrush(*back);
+        *back = nullptr;
+    }
+
 	return;
 }
 
@@ -765,7 +963,7 @@ static void     AddFaceToBounds(const face_t* const f, vec3_t mins, vec3_t maxs)
 // =====================================================================================
 //  ClearBounds
 // =====================================================================================
-static void     ClearBounds(vec3_t mins, vec3_t maxs)
+void     ClearBounds(vec3_t mins, vec3_t maxs)
 {
     mins[0] = mins[1] = mins[2] = 99999;
     maxs[0] = maxs[1] = maxs[2] = -99999;
@@ -899,6 +1097,9 @@ bool            CheckFaceForHint(const face_t* const f)
 // =====================================================================================
 bool            CheckFaceForSkip(const face_t* const f)
 {
+	if (f->treatasskip)
+		return true;
+
 	const char *name = GetTextureByNumber (f->texturenum);
 	if (!strncasecmp (name, "skip", 4))
 		return true;
@@ -960,7 +1161,7 @@ static surfchain_t* ReadSurfs(FILE* file)
 {
     int             r;
 	int				detaillevel;
-    int             planenum, g_texinfo, contents, numpoints;
+    int             planenum, g_texinfo, contents, numpoints, treatasskip;
     face_t*         f;
     int             i;
     double          v[3];
@@ -980,8 +1181,11 @@ static surfchain_t* ReadSurfs(FILE* file)
 
         line++;
         int face_id = -1;
-        r = sscanf(linebuf, "%i %i %i %i %i %i", &detaillevel, &planenum, &g_texinfo, &contents, &numpoints, &face_id);
+        r = sscanf(linebuf, "%i %i %i %i %i %i %i", &detaillevel, &planenum, &g_texinfo, &contents, &treatasskip, &numpoints, &face_id);
         if (r <= 0)
+        r = fscanf(file, 
+        "%i %i %i %i %i %i\n", &detaillevel, &planenum, &g_texinfo, &contents, &treatasskip, &numpoints);
+        if (r == 0 || r == -1)
         {
             return NULL;
         }
@@ -990,7 +1194,7 @@ static surfchain_t* ReadSurfs(FILE* file)
             Developer(DEVELOPER_LEVEL_MEGASPAM, "inaccuracy: average %.8f max %.8f\n", inaccuracy_total / inaccuracy_count, inaccuracy_max);
             break;
         }
-        if (r < 5)
+		if (r < 6)
         {
             Error("ReadSurfs (line %i): sscanf failure", line);
         }
@@ -1011,7 +1215,7 @@ static surfchain_t* ReadSurfs(FILE* file)
 			Error("ReadSurfs (line %i): detaillevel %i < 0", line, detaillevel);
 		}
 
-        if (!strcasecmp(GetTextureByNumber(g_texinfo), "skip"))
+        if (!strcasecmp(GetTextureByNumber(g_texinfo), "skip") || treatasskip)
         {
             Verbose("ReadSurfs (line %i): skipping a surface", line);
 
@@ -1037,6 +1241,7 @@ static surfchain_t* ReadSurfs(FILE* file)
         f->numpoints = numpoints;
         f->face_id = face_id;
         f->next = validfaces[planenum];
+        f->treatasskip = treatasskip;
         validfaces[planenum] = f;
 
         SetFaceType(f);
@@ -1064,13 +1269,90 @@ static surfchain_t* ReadSurfs(FILE* file)
 
     return SurflistFromValidFaces();
 }
+static brush_t *ReadDetailBrushes (FILE *file)
+{
+	brush_t *brushes = NULL;
+	while (1)
+	{
+		if (file == detailbrushfiles[2] && g_nohull2)
+			break;
+
+		int r;
+		int brushinfo;
+		r = fscanf (file, "%i\n", &brushinfo);
+		if (r == 0 || r == -1)
+		{
+			if (brushes == NULL)
+			{
+				Error ("ReadDetailBrushes: no more models");
+			}
+			else
+			{
+				Error ("ReadDetailBrushes: file end");
+			}
+		}
+
+		if (brushinfo == -255)
+		{
+			break;
+		}
+
+		brush_t *b;
+		b = AllocBrush ();
+		b->next = brushes;
+        b->contents = brushinfo;
+        b->original = b;
+
+		brushes = b;
+		side_t **psn;
+		psn = &b->sides;
+		while (1)
+		{
+			int planenum;
+            int texinfo;
+			int numpoints;
+
+			r = fscanf (file, "%i %d %u\n", &planenum, &texinfo, &numpoints);
+			if (r != 3)
+			{
+				Error ("ReadDetailBrushes: get side failed");
+			}
+
+			if (planenum == -1)
+			{
+				break;
+			}
+
+			side_t *s;
+			s = AllocSide ();
+			s->plane = g_dplanes[planenum ^ 1];
+            s->planenum = planenum;
+            s->texinfo = texinfo;
+			s->w = new Winding (numpoints);
+			int x;
+			for (x = 0; x < numpoints; x++)
+			{
+				double v[3];
+				r = fscanf (file, "%lf %lf %lf\n", &v[0], &v[1], &v[2]);
+				if (r != 3)
+				{
+					Error ("ReadDetailBrushes: get point failed");
+				}
+				VectorCopy (v, s->w->m_Points[numpoints - 1 - x]);
+			}
+			s->next = NULL;
+			*psn = s;
+			psn = &s->next;
+		}
+	}
+	return brushes;
+}
+
 static brush_t *ReadBrushes (FILE *file)
 {
 	brush_t *brushes = NULL;
 	while (1)
 	{
-		if (file == brushfiles[2] && g_nohull2)
-			break;
 		int r;
 		int brushinfo;
 		r = fscanf (file, "%i\n", &brushinfo);
@@ -1085,19 +1367,36 @@ static brush_t *ReadBrushes (FILE *file)
 				Error ("ReadBrushes: file end");
 			}
 		}
-		if (brushinfo == -1)
+
+		if (brushinfo == -255)
 		{
 			break;
 		}
-		brush_t *b;
-		b = AllocBrush ();
-		b->next = brushes;
+
+        if(g_nummapbrushes == MAX_MAP_BRUSHES)
+            Error("Exceeded MAX_MAP_BRUSHES");
+
+        brush_t* poriginal = &g_mapbrushes[g_nummapbrushes];
+        g_nummapbrushes++;
+
+		brush_t *b = AllocBrush ();
+	    b->next = brushes;
+        poriginal->contents = b->contents = brushinfo;
+        b->original = poriginal;
+
+        VectorFill(b->mins, MAX_FLOAT_VALUE);
+        VectorFill(b->maxs, -MAX_FLOAT_VALUE);
+
 		brushes = b;
 		side_t **psn;
+        side_t **posn;
 		psn = &b->sides;
+        posn = &poriginal->sides;
         while (1)
         {
             int planenum;
+            int texinfo;
+            int bevel;
             int numpoints;
             int face_id = -1;
             char sidebuf[1024];
@@ -1105,8 +1404,8 @@ static brush_t *ReadBrushes (FILE *file)
             {
                 Error("ReadBrushes: unexpected EOF");
             }
-            r = sscanf(sidebuf, "%i %u %i", &planenum, &numpoints, &face_id);
-            if (r < 2)
+            r = sscanf(sidebuf, "%d %d %d %u %i", &planenum, &texinfo, &bevel, &numpoints, &face_id);
+            if (r < 4)
             {
                 Error("ReadBrushes: get side failed");
             }
@@ -1114,29 +1413,140 @@ static brush_t *ReadBrushes (FILE *file)
 			{
 				break;
 			}
-			side_t *s;
-			s = AllocSide ();
-			s->plane = g_dplanes[planenum ^ 1];
-			s->w = new Winding (numpoints);
-			int x;
-			for (x = 0; x < numpoints; x++)
-			{
-				double v[3];
-				r = fscanf (file, "%lf %lf %lf\n", &v[0], &v[1], &v[2]);
-				if (r != 3)
-				{
-					Error ("ReadBrushes: get point failed");
-				}
-				VectorCopy (v, s->w->m_Points[numpoints - 1 - x]);
-			}
-			s->next = NULL;
+
+            if(g_nummapbrushsides == MAX_MAP_BRUSHSIDES)
+                Error("Exceeded MAX_MAP_BRUSHSIDES");
+
+			side_t *poriginalside = &g_mapbrushsides[g_nummapbrushsides];
+            g_nummapbrushsides++;
+
+            side_t* s = AllocSide();
+			poriginalside->plane = s->plane = g_dplanes[planenum ^ 1];
+            poriginalside->planenum = s->planenum = planenum;
+            poriginalside->texinfo = s->texinfo = texinfo;
+            poriginalside->bevel = s->bevel = bevel ? true : false;
+            if(!s->bevel)
+            {
+			    s->w = new Winding (numpoints);
+			    int x;
+			    for (x = 0; x < numpoints; x++)
+			    {
+				    double v[3];
+				    r = fscanf (file, "%lf %lf %lf\n", &v[0], &v[1], &v[2]);
+				    if (r != 3)
+				    {
+					    Error ("ReadBrushes: get point failed");
+				    }
+				    VectorCopy (v, s->w->m_Points[numpoints - 1 - x]);
+
+                    for(int i = 0; i < 3; i++)
+                    {
+                        if(v[i] > b->maxs[i])
+                            b->maxs[i] = v[i];
+
+                        if(v[i] < b->mins[i])
+                            b->mins[i] = v[i];
+                    }
+			    }
+
+#ifdef DEBUG
+                poriginalside->w = new Winding(*s->w);
+#endif
+            }
+			poriginalside->next = s->next = NULL;
+
 			*psn = s;
 			psn = &s->next;
+
+			*posn = poriginalside;
+			posn = &poriginalside->next;
 		}
+
+        VectorCopy(b->mins, poriginal->mins);
+        VectorCopy(b->maxs, poriginal->maxs);
 	}
 	return brushes;
 }
 
+// =====================================================================================
+//  DumpSMD_Brushes
+// =====================================================================================
+void DumpSMD_Brushes( brush_t* pbrushes )
+{
+	char filepath[MAX_PATH];
+	strcpy(filepath, "D:/test.smd");
+
+	FILE* pf = fopen(filepath, "w");
+	if(!pf)
+		return;
+
+	fprintf(pf, "version 1\n");
+	fprintf(pf, "nodes\n");
+	fprintf(pf, "  0 \"bone01\"  -1\n");
+	fprintf(pf, "end\n");
+	fprintf(pf, "skeleton\n");
+	fprintf(pf, "time 0\n");
+	fprintf(pf, "  0 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000\n");
+	fprintf(pf, "end\n");
+
+	fprintf(pf, "triangles\n");
+
+    brush_t* pnext = pbrushes;
+    while(pnext)
+    {
+        side_t* pside = pnext->sides;
+        for(; pside; pside = pside->next)
+        {
+            Winding* pwinding = pside->w;
+            if(!pwinding)
+                continue;
+
+            vec3_t points[3];
+            for(int i = 0; i < 3; i++)
+                VectorCopy(pwinding->m_Points[i], points[i]);
+
+            fprintf(pf, "null.tga\n");
+            for(int i = 0; i < 3; i++)
+                fprintf(pf, "  0   %.4f  %.4f  %.4f  %.4f  %.4f  %.4f  %.4f  %.4f\n", points[i][0], points[i][1], points[i][2], 0, 0, 0, 0, 0);
+
+            int extracount = (pwinding->m_NumPoints-3);
+            for(int i = 0; i < extracount; i++)
+            {
+                VectorCopy(points[2], points[1]);
+                VectorCopy(pwinding->m_Points[3+i], points[2]);
+
+                fprintf(pf, "null.tga\n");
+                for(int j = 0; j < 3; j++)
+                    fprintf(pf, "  0   %.4f  %.4f  %.4f  %.4f  %.4f  %.4f  %.4f  %.4f\n", points[j][0], points[j][1], points[j][2], 0, 0, 0, 0, 0);
+            }
+        }
+
+        pnext = pnext->next;
+    }
+
+	fprintf(pf, "end\n");
+	fclose(pf);
+}
+
+// =====================================================================================
+//  BuildLeafBrushes
+// =====================================================================================
+static bool     BuildLeafBrushes(node_t* pnodes)
+{
+    brush_t *pbrushes =  ReadBrushes (brushfile);
+    if(!pbrushes)
+        return true;
+
+    brush_t* pnext = pbrushes;
+    while(pnext)
+    {
+        brush_t* poriginal = pnext;
+        pnext = poriginal->next;
+        SplitBrushToLeaves(poriginal, pnodes);
+    }
+    
+    return true;
+}
 
 // =====================================================================================
 //  ProcessModel
@@ -1145,6 +1555,7 @@ static bool     ProcessModel()
 {
     surfchain_t*    surfs;
 	brush_t			*detailbrushes;
+    
     node_t*         nodes;
     dmodel_t*       model;
     int             startleafs;
@@ -1153,7 +1564,8 @@ static bool     ProcessModel()
 
     if (!surfs)
         return false;                                      // all models are done
-	detailbrushes = ReadBrushes (brushfiles[0]);
+
+	detailbrushes = ReadDetailBrushes (detailbrushfiles[0]);
 
     hlassume(g_nummodels < MAX_MAP_MODELS, assume_MAX_MAP_MODELS);
 
@@ -1258,6 +1670,8 @@ static bool     ProcessModel()
 		VectorFill (nodes->mins, 0);
 		VectorFill (nodes->maxs, 0);
 	}
+
+    BuildLeafBrushes(nodes);
     WriteDrawNodes(nodes);
     model->numfaces = g_numfaces - model->firstface;
     model->visleafs = g_numleafs - startleafs;
@@ -1279,7 +1693,8 @@ static bool     ProcessModel()
     for (g_hullnum = 1; g_hullnum < NUM_HULLS; g_hullnum++)
     {
         surfs = ReadSurfs(polyfiles[g_hullnum]);
-		detailbrushes = ReadBrushes (brushfiles[g_hullnum]);
+		detailbrushes = ReadDetailBrushes (detailbrushfiles[g_hullnum]);
+
 		{
 			int hullnum = g_hullnum;
 			if (surfs->mins[0] > surfs->maxs[0])
@@ -1310,7 +1725,7 @@ static bool     ProcessModel()
 			}
 		}
         nodes = SolidBSP(surfs,
-			detailbrushes, 
+			detailbrushes,
 			modnum==0);
         if (g_nummodels == 1 && !g_nofill)                   // assume non-world bmodels are simple
         {
@@ -1517,6 +1932,7 @@ static void     ProcessFile(const char* const filename)
 
 	safe_snprintf (g_extentfilename, _MAX_PATH, "%s.ext", filename);
 	unlink (g_extentfilename);
+
     // open the hull files
     for (i = 0; i < NUM_HULLS; i++)
     {
@@ -1527,10 +1943,17 @@ static void     ProcessFile(const char* const filename)
         if (!polyfiles[i])
             Error("Can't open %s", name);
 		sprintf(name, "%s.b%i", filename, i);
-		brushfiles[i] = fopen(name, "r");
-		if (!brushfiles[i])
+		detailbrushfiles[i] = fopen(name, "r");
+		if (!detailbrushfiles[i])
 			Error("Can't open %s", name);
     }
+
+    // Open the collision brush file
+	sprintf(name, "%s.bc", filename);
+	brushfile = fopen(name, "r");
+	if (!brushfile)
+		Error("Can't open %s", name);
+
 	{
 		FILE			*f;
 		char			name[_MAX_PATH];
@@ -1608,12 +2031,14 @@ static void     ProcessFile(const char* const filename)
     LoadMapDisp(dispname);
 
     // process each model individually
-    while (ProcessModel())
-        ;
+    while (ProcessModel());
+
+    // Write brushes for collisions
+    WriteBrushes();
 
     // write the updated bsp file out
     FinishBSPFile();
-
+#ifndef DEBUG
 	// Because the bsp file has been updated, these polyfiles are no longer valid.
     for (i = 0; i < NUM_HULLS; i++)
     {
@@ -1622,14 +2047,21 @@ static void     ProcessFile(const char* const filename)
 		polyfiles[i] = NULL;
 		unlink (name);
 		sprintf(name, "%s.b%i", filename, i);
-		fclose (brushfiles[i]);
-		brushfiles[i] = NULL;
+		fclose (detailbrushfiles[i]);
+		detailbrushfiles[i] = NULL;
 		unlink (name);
+		sprintf(name, "%s.bc", filename);
     }
+
+	fclose (brushfile);
+	brushfile = NULL;
+	unlink (name);
+
 	safe_snprintf (name, _MAX_PATH, "%s.hsz", filename);
 	unlink (name);
 	safe_snprintf (name, _MAX_PATH, "%s.pln", filename);
 	unlink (name);
+#endif
 }
 
 // =====================================================================================

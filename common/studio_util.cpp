@@ -642,7 +642,7 @@ void VBM_SetupBones( const studiohdr_t* pstudiohdr, const vbmheader_t* pvbmheade
 	_angles[YAW] = angles[YAW];
 	_angles[ROLL] = angles[ROLL];
 
-	AngleMatrix(angles, g_rotationMatrix);
+	AngleMatrix(_angles, g_rotationMatrix);
 
 	for(int i = 0; i < 3; i++)
 		g_rotationMatrix[i][3] = origin[i];

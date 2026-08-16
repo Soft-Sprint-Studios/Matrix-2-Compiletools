@@ -311,6 +311,7 @@ void            MakeTnodes(dmodel_t* /*bm*/)
 int             TestLine_r(const int node, const vec3_t start, const vec3_t stop
 						   , int &linecontent
 						   , vec_t *skyhit
+						   , vec_t *hitpos
 						   )
 {
     tnode_t*        tnode;
@@ -326,10 +327,18 @@ int             TestLine_r(const int node, const vec3_t start, const vec3_t stop
 			return CONTENTS_EMPTY;
 		if (node == CONTENTS_SOLID)
 		{
+			if (hitpos)
+			{
+				VectorCopy (start, hitpos);
+			}
 			return CONTENTS_SOLID;
 		}
 		if (node == CONTENTS_SKY)
 		{
+			if (hitpos)
+			{
+				VectorCopy (start, hitpos);
+			}
 			if (skyhit)
 			{
 				VectorCopy (start, skyhit);
@@ -338,6 +347,10 @@ int             TestLine_r(const int node, const vec3_t start, const vec3_t stop
 		}
 		if (linecontent)
 		{
+			if (hitpos)
+			{
+				VectorCopy (start, hitpos);
+			}
 			return CONTENTS_SOLID;
 		}
 		linecontent = node;
@@ -370,6 +383,7 @@ int             TestLine_r(const int node, const vec3_t start, const vec3_t stop
 		return TestLine_r(tnode->children[0], start, stop
 			, linecontent
 			, skyhit
+			, hitpos
 			);
 	}
 	if (front < -ON_EPSILON/2 && back < -ON_EPSILON/2)
@@ -377,6 +391,7 @@ int             TestLine_r(const int node, const vec3_t start, const vec3_t stop
 		return TestLine_r(tnode->children[1], start, stop
 			, linecontent
 			, skyhit
+			, hitpos
 			);
 	}
 	if (fabs(front) <= ON_EPSILON && fabs(back) <= ON_EPSILON)
@@ -384,12 +399,14 @@ int             TestLine_r(const int node, const vec3_t start, const vec3_t stop
 		int r1 = TestLine_r(tnode->children[0], start, stop
 			, linecontent
 			, skyhit
+			, hitpos
 			);
 		if (r1 == CONTENTS_SOLID)
 			return CONTENTS_SOLID;
 		int r2 = TestLine_r(tnode->children[1], start, stop
 			, linecontent
 			, skyhit
+			, hitpos
 			);
 		if (r2 == CONTENTS_SOLID)
 			return CONTENTS_SOLID;
@@ -407,12 +424,14 @@ int             TestLine_r(const int node, const vec3_t start, const vec3_t stop
 	r = TestLine_r(tnode->children[side], start, mid
 		, linecontent
 		, skyhit
+		, hitpos
 		);
 	if (r != CONTENTS_EMPTY)
 		return r;
 	return TestLine_r(tnode->children[!side], mid, stop
 		, linecontent
 		, skyhit
+		, hitpos
 		);
 }
 
@@ -443,9 +462,22 @@ int             TestLine(const vec3_t start, const vec3_t stop
     return TestLine_r(0, new_start, stop
 		, linecontent
 		, skyhit
+		, nullptr
 		);
 }
 
+int             TestLine(const vec3_t start, const vec3_t stop
+						 , vec_t *skyhit
+						 , vec_t* hitpos
+						 )
+{
+	int linecontent = 0;
+    return TestLine_r(0, start, stop
+		, linecontent
+		, skyhit
+		, hitpos
+		);
+}
 
 typedef struct
 {

@@ -36,7 +36,7 @@ int FindIntPlane(const vec_t* const normal, const vec_t* const origin)
 			t = DotProduct (origin, g_mapplanes[returnval].normal) - g_mapplanes[returnval].dist;
 
 			if (-DIST_EPSILON < t && t < DIST_EPSILON)
-			{ return returnval; }
+				return returnval;
 		}
 	}
 
@@ -97,7 +97,11 @@ int PlaneFromPoints(const vec_t* const p0, const vec_t* const p1, const vec_t* c
     vec3_t          normal;
 
     VectorSubtract(p0, p1, v1);
+	VectorNormalize(v1);
+
     VectorSubtract(p2, p1, v2);
+	VectorNormalize(v2);
+
     CrossProduct(v1, v2, normal);
     if (VectorNormalize(normal))
     {
@@ -132,9 +136,13 @@ void AddHullPlane(brushhull_t* hull, const vec_t* const normal, const vec_t* con
 		for(current_face = hull->faces; current_face; current_face = current_face->next)
 		{
 			if(current_face->planenum == planenum)
-			{ return; } //don't add a plane twice
+			{ 
+				//don't add a plane twice
+				return; 
+			}
 		}
 	}
+
 	bface_t* new_face = (bface_t*)Alloc(sizeof(bface_t)); // TODO: This leaks
 	new_face->planenum = planenum;
 	new_face->plane = &g_mapplanes[new_face->planenum];
@@ -142,6 +150,9 @@ void AddHullPlane(brushhull_t* hull, const vec_t* const normal, const vec_t* con
 	new_face->contents = CONTENTS_EMPTY;
 	hull->faces = new_face;
 	new_face->texinfo = -1;
+	new_face->treatasskip = false;
+	new_face->facenum = c_facecount;
+	c_facecount++;
 }
 
 // =====================================================================================
@@ -837,15 +848,9 @@ bool            MakeBrushPlanes(brush_t* b)
 {
     int             i;
     int             j;
-    int             planenum;
     side_t*         s;
     bface_t*        f;
     vec3_t          origin;
-
-    //
-    // if the origin key is set (by an origin brush), offset all of the values
-    //
-    GetVectorForKey(&g_entities[b->entitynum], "origin", origin);
 
     //
     // convert to mapplanes
@@ -853,44 +858,23 @@ bool            MakeBrushPlanes(brush_t* b)
     // for each side in this brush
     for (i = 0; i < b->numsides; i++)
     {
-        s = &g_brushsides[b->firstside + i];
-        for (j = 0; j < 3; j++)
-        {
-            VectorSubtract(s->planepts[j], origin, s->planepts[j]);
-        }
-        planenum = PlaneFromPoints(s->planepts[0], s->planepts[1], s->planepts[2]);
-        if (planenum == -1)
-        {
-            Fatal(assume_PLANE_WITH_NO_NORMAL, "Entity %i, Brush %i, Side %i: plane with no normal", 
-				b->originalentitynum, b->originalbrushnum
-				, i);
-        }
-
-        //
-        // see if the plane has been used already
-        //
-        for (f = b->hulls[0].faces; f; f = f->next)
-        {
-            if (f->planenum == planenum || f->planenum == (planenum ^ 1))
-            {
-                Fatal(assume_BRUSH_WITH_COPLANAR_FACES, "Entity %i, Brush %i, Side %i: has a coplanar plane at (%.0f, %.0f, %.0f), texture %s",
-					b->originalentitynum, b->originalbrushnum
-					  , i, s->planepts[0][0] + origin[0], s->planepts[0][1] + origin[1],
-                      s->planepts[0][2] + origin[2], s->td.name);
-            }
-        }
+        s = &g_mapbrushsides[b->firstside + i];
+		if(s->brushbevel)
+			continue;
 
         f = (bface_t*)Alloc(sizeof(*f));                             // TODO: This leaks
 
-		f->planenum = planenum;
-		f->plane = &g_mapplanes[planenum];
-		f->next = b->hulls[0].faces;
-		b->hulls[0].faces = f;
-		f->texinfo = g_onlyents ? 0 : TexinfoForBrushTexture(f->plane, &s->td, origin
-		);
+        f->planenum = s->planenum;
+        f->plane = &g_mapplanes[s->planenum];
+        f->next = b->hulls[0].faces;
+        b->hulls[0].faces = f;
+        f->texinfo = s->texinfo;
 		f->bevel = b->bevel || s->bevel;
+		f->treatasskip = s->treatasskip;
+		f->facenum = c_facecount;
 		f->face_id = s->face_id;
-	}
+		c_facecount++;
+    }
 
 	return true;
 }
@@ -899,8 +883,11 @@ bool            MakeBrushPlanes(brush_t* b)
 // =====================================================================================
 //  TextureContents
 // =====================================================================================
-static contents_t TextureContents(const char* const name)
+static contents_t TextureContents(side_t* s, const char* const name)
 {
+	if(s->treatasskip)
+		return CONTENTS_TOEMPTY;
+
 	if (!strncasecmp(name, "contentsolid", 12))
 		return CONTENTS_SOLID;
 	if (!strncasecmp(name, "contentwater", 12))
@@ -1041,7 +1028,7 @@ contents_t      CheckBrushContents(const brush_t* const b)
 	int				best_i;
 	bool			assigned = false;
 
-    s = &g_brushsides[b->firstside];
+    s = &g_mapbrushsides[b->firstside];
 
     // cycle though the sides of the brush and attempt to get our best side contents for
     //  determining overall brush contents
@@ -1052,18 +1039,22 @@ contents_t      CheckBrushContents(const brush_t* const b)
 			);
 	}
 	best_i = 0;
-    best_contents = TextureContents(s->td.name);
+    best_contents = TextureContents(s, s->td.name);
+
+
 	// Difference between SKIP, ContentEmpty:
 	// SKIP doesn't split space in bsp process, ContentEmpty splits space normally.
-	if (!(strncasecmp (s->td.name, "content", 7) && strncasecmp (s->td.name, "skip", 4)))
+	if (!(strncasecmp (s->td.name, "content", 7) && (strncasecmp (s->td.name, "skip", 4) && !s->treatasskip)))
 		assigned = true;
+
     s++;
 	for (i = 1; i < b->numsides; i++, s++)
     {
-        contents_t contents_consider = TextureContents(s->td.name);
+        contents_t contents_consider = TextureContents(s, s->td.name);
 		if (assigned)
 			continue;
-		if (!(strncasecmp (s->td.name, "content", 7) && strncasecmp (s->td.name, "skip", 4)))
+
+		if (!(strncasecmp (s->td.name, "content", 7) && (strncasecmp (s->td.name, "skip", 4) && !s->treatasskip)))
 		{
 			best_i = i;
 			best_contents = contents_consider;
@@ -1079,13 +1070,13 @@ contents_t      CheckBrushContents(const brush_t* const b)
     contents = best_contents;
 
     // attempt to pick up on mixed_face_contents errors
-    s = &g_brushsides[b->firstside];
+    s = &g_mapbrushsides[b->firstside];
 	for (i = 0; i < b->numsides; i++, s++)
     {
-        contents_t contents2 = TextureContents(s->td.name);
+        contents_t contents2 = TextureContents(s, s->td.name);
 		if (assigned
 			&& strncasecmp (s->td.name, "content", 7)
-			&& strncasecmp (s->td.name, "skip", 4)
+			&& (strncasecmp (s->td.name, "skip", 4) && !s->treatasskip)
 			&& contents2 != CONTENTS_ORIGIN
 			&& contents2 != CONTENTS_HINT
 			&& contents2 != CONTENTS_BOUNDINGBOX
@@ -1105,7 +1096,7 @@ contents_t      CheckBrushContents(const brush_t* const b)
         {
             Fatal(assume_MIXED_FACE_CONTENTS, "Entity %i, Brush %i: mixed face contents\n    Texture %s and %s",
 				b->originalentitynum, b->originalbrushnum, 
-                g_brushsides[b->firstside + best_i].td.name,
+                g_mapbrushsides[b->firstside + best_i].td.name,
 				s->td.name);
         }
     }
@@ -1247,7 +1238,7 @@ hullbrush_t *CreateHullBrush (const brush_t *b)
 		vec3_t normal;
 		planetypes axial;
 
-		s = &g_brushsides[b->firstside + i];
+		s = &g_mapbrushsides[b->firstside + i];
 		for (j = 0; j < 3; j++)
 		{
 			VectorSubtract (s->planepts[j], origin, p[j]);

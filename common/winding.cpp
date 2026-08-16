@@ -671,7 +671,7 @@ int             Winding::WindingOnPlaneSide(const vec3_t normal, const vec_t dis
     for (i = 0; i < m_NumPoints; i++)
     {
         d = DotProduct(m_Points[i], normal) - dist;
-        if (d < -ON_EPSILON)
+        if (d < -epsilon)
         {
             if (front)
             {
@@ -680,7 +680,7 @@ int             Winding::WindingOnPlaneSide(const vec3_t normal, const vec_t dis
             back = true;
             continue;
         }
-        if (d > ON_EPSILON)
+        if (d > epsilon)
         {
             if (back)
             {

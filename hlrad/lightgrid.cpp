@@ -404,6 +404,25 @@ void GatherGridPointLight( const vec3_t pos, const byte* const pvs, lightgrid_sa
 	memset(add_styles, 0, sizeof(add_styles));
 	add_styles[0] = 0;
 
+	vec3_t hitpos;
+	vec3_t end;
+	VectorCopy(pos, end);
+	end[2] -= BOGUS_RANGE;
+	TestLine(pos, end, nullptr, hitpos);
+
+	int softSkySetting;
+	float heightAboveGround = fabs(hitpos[2] - pos[2]);
+	if(heightAboveGround < 512)
+		softSkySetting = SOFTSKY_MINIMAL;
+	else
+		softSkySetting = SOFTSKY_CHEAP;
+
+	bool noBounce;
+	if(heightAboveGround > 1024)
+		noBounce = true;
+	else
+		noBounce = false;
+
 	CBitSet directLightTraceSetBitset(numdlights);
 	CBitSet directLightTraceBitset(numdlights);
 
@@ -452,73 +471,96 @@ void GatherGridPointLight( const vec3_t pos, const byte* const pvs, lightgrid_sa
 	}
 
 	// Bounced lighting
-	for (i = 0; i < (int)g_num_patches; i++)
+	if(!noBounce)
 	{
-		patch_t* p = &g_patches[i];
-		if (p->leafnum != 0 && !(pvs[(p->leafnum - 1) >> 3] & (1 << ((p->leafnum - 1) & 7))))
-			continue;
-
-		vec3_t v_delta;
-		VectorSubtract(p->origin, pos, v_delta);
-		float d2 = DotProduct(v_delta, v_delta);
-		float d = sqrt(d2);
-		if (d < 1.0f)
-			d = 1.0f;
-
-		// Do not use normal here, as sample points don't have any
-		float dot_rec =  1 / d; 
-		if(dot_rec < 0)
-			continue;
-
-		vec3_t planeNormal;
-		VectorCopy(getPlaneFromFaceNumber(p->faceNumber)->normal, planeNormal);
-		float dot_em = -DotProduct(v_delta, planeNormal) / d;
-		if(dot_em < 0)
-			continue;
-
-		float scale = (dot_rec * dot_em * p->area) / (Q_PI * d2 + p->area);
-		if(scale <= 0)
-			continue;
-
-		if (TestLine(pos, p->origin) != CONTENTS_EMPTY)
-			continue;
-
-		vec3_t transparency;
-		int opaquestyle;
-#if 0
-		if (TestSegmentAgainstOpaqueList(pos, p->origin, transparency, opaquestyle, true))
-			continue;
-#else
-		VectorFill(transparency, 1);
-		opaquestyle = -1;
-#endif
-		for (int j = 0; j < MAXLIGHTMAPS && p->totalstyle[j] != 255; j++)
+		for (i = 0; i < (int)g_num_patches; i++)
 		{
-			// Account for opaque
-			int bouncestyle = p->totalstyle[j];
-			if (opaquestyle != -1)
-			{
-				if (bouncestyle == 0 || bouncestyle == opaquestyle)
-				{
-					// Use opaque style as bounce style
-					bouncestyle = opaquestyle;
-				}
-				else
-				{
-					// dynamic light of other styles hits this toggleable opaque entity, then it completely vanishes.
-					continue; 
-				}
-			}
+			patch_t* p = &g_patches[i];
+			if (p->leafnum != 0 && !(pvs[(p->leafnum - 1) >> 3] & (1 << ((p->leafnum - 1) & 7))))
+				continue;
 
-			// Do NOT allow the bounce lighting to add new styles, this can mess up things with ALD consistency, so
-			// get the original sample on this style and see if there's usable values here
-			vec_t dsamplebrightness = GetBrightestSample(adds[bouncestyle], adds_ambient[bouncestyle], adds_diffuse[bouncestyle]);
-			if(bouncestyle == 0 || dsamplebrightness > g_corings[bouncestyle] * 0.1)
+			vec3_t v_delta;
+			VectorSubtract(p->origin, pos, v_delta);
+			float d2 = DotProduct(v_delta, v_delta);
+			float d = sqrt(d2);
+			if (d < 1.0f)
+				d = 1.0f;
+
+			// Do not use normal here, as sample points don't have any
+			float dot_rec =  1 / d; 
+			if(dot_rec < 0)
+				continue;
+
+			vec3_t planeNormal;
+			VectorCopy(getPlaneFromFaceNumber(p->faceNumber)->normal, planeNormal);
+			float dot_em = -DotProduct(v_delta, planeNormal) / d;
+			if(dot_em < 0)
+				continue;
+
+			float scale = (dot_rec * dot_em * p->area) / (Q_PI * d2 + p->area);
+			if(scale <= 0)
+				continue;
+
+			if (TestLine(pos, p->origin) != CONTENTS_EMPTY)
+				continue;
+
+			vec3_t transparency;
+			int opaquestyle;
+	#if 0
+			if (TestSegmentAgainstOpaqueList(pos, p->origin, transparency, opaquestyle, true))
+				continue;
+	#else
+			VectorFill(transparency, 1);
+			opaquestyle = -1;
+	#endif
+			for (int j = 0; j < MAXLIGHTMAPS && p->totalstyle[j] != 255; j++)
 			{
-				vec3_t patch_add;
-				VectorMA(adds_ambient[bouncestyle], scale, p->totallight[j], patch_add);
-				VectorMultiply(patch_add, transparency, adds_ambient[bouncestyle]);
+				// Account for opaque
+				int bouncestyle = p->totalstyle[j];
+				if (opaquestyle != -1)
+				{
+					if (bouncestyle == 0 || bouncestyle == opaquestyle)
+					{
+						// Use opaque style as bounce style
+						bouncestyle = opaquestyle;
+					}
+					else
+					{
+						// dynamic light of other styles hits this toggleable opaque entity, then it completely vanishes.
+						continue; 
+					}
+				}
+
+				// Do NOT allow the bounce lighting to add new styles, this can mess up things with ALD consistency, so
+				// get the original sample on this style and see if there's usable values here
+				vec_t dsamplebrightness = GetBrightestSample(adds[bouncestyle], adds_ambient[bouncestyle], adds_diffuse[bouncestyle]);
+				if(bouncestyle == 0 || dsamplebrightness > g_corings[bouncestyle] * 0.1)
+				{
+					vec3_t patch_add;
+					VectorMA(adds_ambient[bouncestyle], scale, p->totallight[j], patch_add);
+					VectorMultiply(patch_add, transparency, adds_ambient[bouncestyle]);
+				}
 			}
+		}
+	}
+
+	// Compare ambient and diffuse styles. If the diffuse is too low, divide the ambient
+	for(int i = 0; i < ALLSTYLES; i++)
+	{
+		float ambientstrength = VectorMaximum(adds_ambient[i]);
+		float diffusestrength = VectorMaximum(adds_diffuse[i]);
+
+		float ratio = (diffusestrength/ambientstrength);
+		if(ratio < 0.1)
+		{
+			vec3_t diffusePart;
+			VectorScale(adds_ambient[i], 0.6, diffusePart);
+			VectorSubtract(adds_ambient[i], diffusePart, adds_ambient[i]);
+			VectorAdd(adds_diffuse[i], diffusePart, adds_diffuse[i]);
+
+			// Make it come from directly above
+			directions[i][0] = directions[i][1] = 0;
+			directions[i][2] = 1;
 		}
 	}
 

@@ -356,9 +356,7 @@ lumpinfo_t*     FindTexture(const lumpinfo_t* const source)
     if (!found)
     {
         Warning("::FindTexture() texture %s not found!", source->name);
-        if (!strcmp(source->name, "NULL")
-			|| !strcmp (source->name, "SKIP")
-			)
+        if (!strcmp(source->name, "NULL") || !strcmp (source->name, "SKIP"))
         {
             Log("Are you sure you included zhlt.wad in your wadpath list?\n");
         }
@@ -732,10 +730,12 @@ int             TexinfoForBrushTexture(const plane_t* const plane, brush_texture
     texinfo_t*      tc;
     int             i, j, k;
 
-	if (!strncasecmp(bt->name, "NULL", 4))
-	{
-		return -1;
-	}
+    // For brush data in the BSP we need null also
+	//if (!strncasecmp(bt->name, "NULL", 4))
+	//{
+	//	return -1;
+	//}
+
     memset(&tx, 0, sizeof(tx));
 	FindMiptex (bt->name);
 

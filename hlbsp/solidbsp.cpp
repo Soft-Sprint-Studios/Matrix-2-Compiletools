@@ -32,6 +32,16 @@ static bool g_reportProgress = false;
 static int  g_numProcessed = 0;
 static int  g_numReported = 0;
 
+#define PLANESIDE_EPSILON           0.1 // qb: maybe can be smaller, but this small leaves gaps //0.001
+#define PSIDE_FRONT                 1
+#define PSIDE_BACK                  2
+#define PSIDE_BOTH                  (PSIDE_FRONT | PSIDE_BACK)
+#define PSIDE_FACING                4
+#define TEXINFO_NODE                -1 // side is already on a node
+
+extern brush_t         g_mapbrushes[MAX_MAP_BRUSHES];
+extern int             g_nummapbrushes;
+
 static void ResetStatus(bool report_progress)
 {
 	g_reportProgress = report_progress;
@@ -947,19 +957,27 @@ static void     SplitNodeSurfaces(surface_t* surfaces, const node_t* const node)
     node->children[0]->surfaces = frontlist;
     node->children[1]->surfaces = backlist;
 }
-static void SplitNodeBrushes (brush_t *brushes, const node_t *node)
+
+static void SplitNodeDetailBrushes (brush_t *brushes, const node_t *node)
 {
 	brush_t *frontlist, *frontfrag;
 	brush_t *backlist, *backfrag;
 	brush_t *b, *next;
-	const dplane_t *splitplane;
+
 	frontlist = NULL;
 	backlist = NULL;
-	splitplane = &g_dplanes[node->planenum];
+
 	for (b = brushes; b; b = next)
 	{
+		if(!b->sides)
+		{
+			next = b->next;
+			continue;
+		}
+
 		next = b->next;
-		SplitBrush (b, splitplane, &frontfrag, &backfrag);
+		SplitBrush (b, &g_mapplanes[node->planenum], &frontfrag, &backfrag);
+
 		if (frontfrag)
 		{
 			frontfrag->next = frontlist;
@@ -971,6 +989,7 @@ static void SplitNodeBrushes (brush_t *brushes, const node_t *node)
 			backlist = backfrag;
 		}
 	}
+
 	node->children[0]->detailbrushes = frontlist;
 	node->children[1]->detailbrushes = backlist;
 }
@@ -1244,6 +1263,7 @@ static void MakeLeaf (node_t *leafnode)
 	leafnode->iscontentsdetail = leafnode->detailbrushes != NULL;
 	FreeLeafBrushes (leafnode);
 	leafnode->detailbrushes = NULL;
+	//leafnode->brushes = nullptr;
 	if (leafnode->boundsbrush)
 	{
 		FreeBrush (leafnode->boundsbrush);
@@ -1582,9 +1602,7 @@ static void     BuildBspTree_r(node_t* node)
     surface_t*      allsurfs;
 	vec3_t			validmins, validmaxs;
 
-    midsplit = CalcNodeBounds(node
-		, validmins, validmaxs
-		);
+    midsplit = CalcNodeBounds(node, validmins, validmaxs);
 	if (node->boundsbrush)
 	{
 		CalcBrushBounds (node->boundsbrush, node->loosemins, node->loosemaxs);
@@ -1597,10 +1615,8 @@ static void     BuildBspTree_r(node_t* node)
 
 	int splitdetaillevel = CalcSplitDetaillevel (node);
 	FixDetaillevelForDiscardable (node, splitdetaillevel);
-    split = SelectPartition(node->surfaces, node, midsplit
-		, splitdetaillevel
-		, validmins, validmaxs
-		);
+    split = SelectPartition(node->surfaces, node, midsplit, splitdetaillevel, validmins, validmaxs);
+
 	if (!node->isdetail && (!split || split->detaillevel > 0))
 	{
 		node->isportalleaf = true;
@@ -1614,6 +1630,7 @@ static void     BuildBspTree_r(node_t* node)
 	{
 		node->isportalleaf = false;
 	}
+
     if (!split)
     {                                                      // this is a leaf node
 		MakeLeaf (node);
@@ -1634,7 +1651,8 @@ static void     BuildBspTree_r(node_t* node)
 
     // split all the polysurfaces into front and back lists
     SplitNodeSurfaces(allsurfs, node);
-	SplitNodeBrushes (node->detailbrushes, node);
+	SplitNodeDetailBrushes (node->detailbrushes, node);
+
 	if (node->boundsbrush)
 	{
 		for (int k = 0; k < 2; k++)
@@ -1686,7 +1704,7 @@ static void     BuildBspTree_r(node_t* node)
 //      The original surface chain will be completely freed.
 // =====================================================================================
 node_t*         SolidBSP(const surfchain_t* const surfhead, 
-						 brush_t *detailbrushes, 
+						 brush_t *detailbrushes,					
 						 bool report_progress)
 {
     node_t*         headnode;
@@ -1710,7 +1728,6 @@ node_t*         SolidBSP(const surfchain_t* const surfhead,
 	VectorAddVec (surfhead->mins, -SIDESPACE, brushmins);
 	VectorAddVec (surfhead->maxs, SIDESPACE, brushmaxs);
 	headnode->boundsbrush = BrushFromBox (brushmins, brushmaxs);
-
 
     // generate six portals that enclose the entire world
     MakeHeadnodePortals(headnode, surfhead->mins, surfhead->maxs);
