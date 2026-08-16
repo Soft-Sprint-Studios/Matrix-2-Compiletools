@@ -92,6 +92,7 @@ typedef struct face_s                                      // This structure is 
     int             numpoints;
     facestyle_e     facestyle;
 	int				referenced;                            // only valid for original faces
+    bool            treatasskip;
 
     // vector quad word aligned
     vec3_t          pts[MAXEDGES];                         // FIXME: change to use winding_t
@@ -123,6 +124,9 @@ typedef struct side_s
 	struct side_s	*next;
 	dplane_t		plane; // facing inside (reversed when loading brush file)
 	Winding			*w; // (also reversed)
+    int             texinfo;
+    int             planenum;
+    bool            bevel;
 }
 side_t;
 
@@ -130,6 +134,11 @@ typedef struct brush_s
 {
 	struct brush_s	*next;
 	side_t			*sides;
+    int             contents;
+    brush_s         *original;
+    vec3_t          mins;
+    vec3_t          maxs;
+    bool            assigned;
 }
 brush_t;
 
@@ -138,6 +147,12 @@ brush_t;
 //
 #define	PLANENUM_LEAF		-1
 #define BOUNDS_EXPANSION 1.0 // expand the bounds of detail leafs when clipping its boundsbrush, to prevent some strange brushes in the func_detail from clipping away the entire boundsbrush making the func_detail invisible.
+
+typedef struct leafbrushref_s
+{
+    leafbrushref_s* pnext;
+    brush_t* pbrush;
+} leafbrushref_t;
 
 typedef struct node_s
 {
@@ -164,6 +179,8 @@ typedef struct node_s
     int             valid;                                 // for flood filling
     int             occupied;                              // light number in leaf for outside filling
 	int				empty;
+
+    leafbrushref_t* pleafbrushes;
 }
 node_t;
 
@@ -215,6 +232,7 @@ void            tjunc(node_t* headnode);
 // writebsp.c
 extern void     WriteClipNodes(node_t* headnode);
 extern void     WriteDrawNodes(node_t* headnode);
+extern void     WriteBrushes( void );
 
 extern void     BeginBSPFile();
 extern void     FinishBSPFile();
@@ -243,12 +261,14 @@ extern side_t *	AllocSide ();
 extern void		FreeSide (side_t *s);
 extern side_t *	NewSideFromSide (const side_t *s);
 extern brush_t *AllocBrush ();
+extern brush_t *AllocBrush (int numsides);
 extern void		FreeBrush (brush_t *b);
 extern brush_t *NewBrushFromBrush (const brush_t *b);
 extern void		SplitBrush (brush_t *in, const dplane_t *split, brush_t **front, brush_t **back);
+extern void     SplitBrush (brush_t *in, int planenum, brush_t **front, brush_t **back);
 extern brush_t *BrushFromBox (const vec3_t mins, const vec3_t maxs);
 extern void		CalcBrushBounds (const brush_t *b, vec3_t &mins, vec3_t &maxs);
-
+extern void     ClearBounds(vec3_t mins, vec3_t maxs);
 extern node_t*  AllocNode();
 
 extern bool     CheckFaceForHint(const face_t* const f);
@@ -268,7 +288,7 @@ typedef enum
 extern void *CreateBrinkinfo (const dclipnode_t *clipnodes, int headnode);
 extern bool FixBrinks (const void *brinkinfo, bbrinklevel_e level, int &headnode_out, dclipnode_t *clipnodes_out, int maxsize, int size, int &size_out);
 extern void DeleteBrinkinfo (void *brinkinfo);
-
+extern void SplitBrushToLeaves( brush_t* pbrush, node_t* pnode );
 
 // =====================================================================================
 //Cpt_Andrew - UTSky Check

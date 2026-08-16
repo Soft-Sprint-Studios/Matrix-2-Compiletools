@@ -121,6 +121,18 @@ int             g_numsurfedges;
 int             g_dsurfedges[MAX_MAP_SURFEDGES];
 int             g_dsurfedges_checksum;
 
+int				g_numbrushes;
+dbrush_t		g_dbrushes[MAX_MAP_BRUSHES];
+int				g_dbrushes_checksum;
+
+int				g_numbrushsides;
+dbrushside_t	g_dbrushsides[MAX_MAP_BRUSHSIDES];
+int				g_dbrushsides_checksum;
+
+int				g_numleafbrushes;
+unsigned int	g_dleafbrushes[MAX_MAP_LEAFBRUSHES];
+int				g_dleafbrushes_checksum;
+
 int             g_numentities;
 entity_t        g_entities[MAX_MAP_ENTITIES];
 
@@ -542,6 +554,9 @@ void            LoadBSPImage(dheader_t* const header)
     g_visdatasize = CopyLump(LUMP_VISIBILITY, g_dvisdata, 1, header);
     g_lightdatasize = CopyLightingLump(LUMP_LIGHTING, g_dlightdata, 1, header, g_dlightdata_compression, g_dlightdata_compression_level, g_lightdatasize_actual);
     g_entdatasize = CopyLump(LUMP_ENTITIES, g_dentdata, 1, header);
+	g_numbrushes = CopyLump(LUMP_BRUSHES, g_dbrushes, sizeof(dbrush_t), header);
+	g_numbrushsides = CopyLump(LUMP_BRUSHSIDES, g_dbrushsides, sizeof(dbrushside_t), header);
+	g_numleafbrushes = CopyLump(LUMP_LEAFBRUSHES, g_dleafbrushes, sizeof(unsigned int), header);
 
 	if(header->lumps[LUMP_LIGHTING_AMBIENT].filelen)
 		CopyLightingLump(LUMP_LIGHTING_AMBIENT, g_dlightdata_ambient, 1, header, g_dlightdata_ambient_compression, g_dlightdata_ambient_compression_level, g_lightdatasize_ambient_actual);
@@ -593,6 +608,9 @@ void            LoadBSPImage(dheader_t* const header)
     g_dvisdata_checksum = FastChecksum(g_dvisdata, g_visdatasize * sizeof(g_dvisdata[0]));
     g_dlightdata_checksum = FastChecksum(g_dlightdata, g_lightdatasize_actual);
     g_dentdata_checksum = FastChecksum(g_dentdata, g_entdatasize * sizeof(g_dentdata[0]));
+	g_dbrushes_checksum = FastChecksum(g_dentdata, g_numbrushes * sizeof(g_dbrushes[0]));
+	g_dbrushsides_checksum = FastChecksum(g_dentdata, g_numbrushsides * sizeof(g_dbrushsides[0]));
+	g_dleafbrushes_checksum = FastChecksum(g_dentdata, g_numleafbrushes * sizeof(g_dleafbrushes[0]));
 
 	if(g_dlightdata_ambient)
 		g_dlightdata_ambient_checksum = FastChecksum(g_dlightdata_ambient, g_lightdatasize_ambient_actual);
@@ -684,28 +702,32 @@ void            WriteBSPFile(const char* const filename)
 
 	header->id = PBSP_HEADER;
 	header->version = LittleLong(PBSP_VERSION);
-	header->flags |= (PBSPV2_FL_HAS_VERTEX_LIGHTING|PBSPV2_FL_HAS_LIGHTGRID_DATA);
+	header->flags |= (PBSPV2_FL_HAS_VERTEX_LIGHTING|PBSPV2_FL_HAS_LIGHTGRID_DATA|PBSPV2_FL_HAS_BRUSH_COLLISIONS);
 
     bspfile = SafeOpenWrite(filename);
     SafeWrite(bspfile, header, sizeof(dheader_t));         // overwritten later
 
-    //      LUMP TYPE       DATA            LENGTH                              HEADER  BSPFILE   
-    AddLump(LUMP_PLANES,    g_dplanes,      g_numplanes * sizeof(dplane_t),     header, bspfile);
-    AddLump(LUMP_LEAFS,     g_dleafs,       g_numleafs * sizeof(dleaf_t),       header, bspfile);
-    AddLump(LUMP_VERTEXES,  g_dvertexes,    g_numvertexes * sizeof(dvertex_t),  header, bspfile);
-    AddLump(LUMP_NODES,     g_dnodes,       g_numnodes * sizeof(dnode_t),       header, bspfile);
-    AddLump(LUMP_TEXINFO,   g_texinfo,      g_numtexinfo * sizeof(texinfo_t),   header, bspfile);
-    AddLump(LUMP_FACES,     g_dfaces,       g_numfaces * sizeof(dface_t),       header, bspfile);
-    AddLump(LUMP_CLIPNODES, g_dclipnodes,   g_numclipnodes * sizeof(dclipnode_t), header, bspfile);
+    //      LUMP TYPE			DATA            LENGTH												HEADER  BSPFILE   
+    AddLump(LUMP_PLANES,		g_dplanes,      g_numplanes * sizeof(dplane_t),						header, bspfile);
+    AddLump(LUMP_LEAFS,			g_dleafs,       g_numleafs * sizeof(dleaf_t),						header, bspfile);
+    AddLump(LUMP_VERTEXES,		g_dvertexes,    g_numvertexes * sizeof(dvertex_t),					header, bspfile);
+    AddLump(LUMP_NODES,			g_dnodes,       g_numnodes * sizeof(dnode_t),						header, bspfile);
+    AddLump(LUMP_TEXINFO,		g_texinfo,      g_numtexinfo * sizeof(texinfo_t),					header, bspfile);
+    AddLump(LUMP_FACES,			g_dfaces,       g_numfaces * sizeof(dface_t),						header, bspfile);
+    AddLump(LUMP_CLIPNODES,		g_dclipnodes,   g_numclipnodes * sizeof(dclipnode_t),				header, bspfile);
 
-    AddLump(LUMP_MARKSURFACES, g_dmarksurfaces, g_nummarksurfaces * sizeof(g_dmarksurfaces[0]), header, bspfile);
-    AddLump(LUMP_SURFEDGES, g_dsurfedges,   g_numsurfedges * sizeof(g_dsurfedges[0]), header, bspfile);
-    AddLump(LUMP_EDGES,     g_dedges,       g_numedges * sizeof(dedge_t),       header, bspfile);
-    AddLump(LUMP_MODELS,    g_dmodels,      g_nummodels * sizeof(dmodel_t),     header, bspfile);
+    AddLump(LUMP_MARKSURFACES,	g_dmarksurfaces, g_nummarksurfaces * sizeof(g_dmarksurfaces[0]),	header, bspfile);
+    AddLump(LUMP_SURFEDGES,		g_dsurfedges,   g_numsurfedges * sizeof(g_dsurfedges[0]),			header, bspfile);
+    AddLump(LUMP_EDGES,			g_dedges,       g_numedges * sizeof(dedge_t),						header, bspfile);
+    AddLump(LUMP_MODELS,		g_dmodels,      g_nummodels * sizeof(dmodel_t),						header, bspfile);
 
-    AddLump(LUMP_VISIBILITY,g_dvisdata,     g_visdatasize,                      header, bspfile);
-    AddLump(LUMP_ENTITIES,  g_dentdata,     g_entdatasize,                      header, bspfile);
-    AddLump(LUMP_TEXTURES,  g_dtexdata,     g_texdatasize,                      header, bspfile);
+    AddLump(LUMP_VISIBILITY,	g_dvisdata,     g_visdatasize,										header, bspfile);
+    AddLump(LUMP_ENTITIES,		g_dentdata,     g_entdatasize,										header, bspfile);
+    AddLump(LUMP_TEXTURES,		g_dtexdata,     g_texdatasize,										header, bspfile);
+
+    AddLump(LUMP_BRUSHES,		g_dbrushes,     g_numbrushes * sizeof(dbrush_t),					header, bspfile);
+    AddLump(LUMP_BRUSHSIDES,	g_dbrushsides,  g_numbrushsides * sizeof(dbrushside_t),				header, bspfile);
+    AddLump(LUMP_LEAFBRUSHES,	g_dleafbrushes, g_numleafbrushes * sizeof(unsigned int),			header, bspfile);
 
 	// Handle light data lumps
     AddLightingLump(LUMP_LIGHTING, g_dlightdata, g_lightdatasize, g_lightdatasize_actual, g_dlightdata_compression, g_dlightdata_compression_level, header, bspfile);
@@ -1260,6 +1282,9 @@ void            PrintBSPFileSizes()
     totalmemory += ArrayUsage("marksurfaces", g_nummarksurfaces, ENTRIES(g_dmarksurfaces), ENTRYSIZE(g_dmarksurfaces));
     totalmemory += ArrayUsage("surfedges", g_numsurfedges, ENTRIES(g_dsurfedges), ENTRYSIZE(g_dsurfedges));
     totalmemory += ArrayUsage("edges", g_numedges, ENTRIES(g_dedges), ENTRYSIZE(g_dedges));
+    totalmemory += ArrayUsage("brushes", g_numbrushes, ENTRIES(g_dbrushes), ENTRYSIZE(g_dbrushes));
+	totalmemory += ArrayUsage("brushsides", g_numbrushsides, ENTRIES(g_dbrushsides), ENTRYSIZE(g_dbrushsides));
+	totalmemory += ArrayUsage("leafbrushes", g_numleafbrushes, ENTRIES(g_dleafbrushes), ENTRYSIZE(g_dleafbrushes));
 
     totalmemory += GlobUsage("texdata", g_texdatasize, g_max_map_miptex);
     totalmemory += GlobUsage("lightdata", g_lightdatasize, g_max_map_lightdata);

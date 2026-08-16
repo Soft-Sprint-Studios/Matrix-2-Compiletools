@@ -14,7 +14,8 @@
 #define MAX_MAP_MODELS         4096 // arbitrary
 // variable, but 400 brush entities is very stressful on the engine and network code as it is
 
-#define MAX_MAP_BRUSHES       262144
+#define MAX_MAP_BRUSHES       524288
+#define MAX_MAP_BRUSHSIDES    2097152
 // arbitrary, but large numbers of brushes generally require more lightmap's than the compiler can handle
 
 #define MAX_ENGINE_ENTITIES   65535 // Maximum number of entities managed by the engine
@@ -23,8 +24,8 @@
 #define MAX_MAP_ENTSTRING   (2048*1024) //(512*1024) //vluzacn
 // abitrary, 512Kb of string data should be plenty even with TFC FGD's
 
-#define MAX_MAP_PLANES			262144 // Actual limit is the limit of uint32
-#define MAX_INTERNAL_MAP_PLANES 262144 // Actual limit is the limit of uint32
+#define MAX_MAP_PLANES			1048576 // Actual limit is the limit of uint32
+#define MAX_INTERNAL_MAP_PLANES 1048576 // Actual limit is the limit of uint32
 
 #define MAX_MAP_NODES        262144 // Actual limit is the limit of int32
 #define MAX_MAP_CLIPNODES    262144 // Actual limit is the limit of int32
@@ -49,6 +50,7 @@
 
 #define MAX_MAP_EDGES       524288 // Actual limit is the limit of Uint32
 #define MAX_MAP_SURFEDGES   1048576 // Actual limit is the limit of Int32
+#define MAX_MAP_LEAFBRUSHES       2097152 // Actual limit is the limit of int32
 
 #define DEFAULT_MAX_MAP_MIPTEX      0x2000000 //0x400000 //vluzacn
 // 4Mb of textures is enough especially considering the number of people playing the game
@@ -86,6 +88,10 @@
 #define PBSPV2_FL_HAS_VERTEX_LIGHTING   (1<<1)
 #define PBSPV2_FL_HAS_LIGHTGRID_DATA    (1<<2)
 #define PBSPV2_FL_HAS_SMOOTHING_GROUPS  (1<<3)
+#define PBSPV2_FL_HAS_BRUSH_COLLISIONS  (1<<3)
+
+#define BSIDE_FL_PLANEBACK              (1<<0)
+#define BSIDE_FL_BEVEL                  (1<<1)
 
 //
 // BSP File Structures
@@ -122,6 +128,9 @@ enum bsp_lumps_t
     LUMP_VERTEX_LIGHTING_DIFFUSE,
     LUMP_VERTEX_LIGHTING_VECTORS,
     LUMP_LIGHTGRID_DATA,
+    LUMP_BRUSHES,
+    LUMP_BRUSHSIDES,
+    LUMP_LEAFBRUSHES,
 
     // Must be last
     HEADER_LUMPS
@@ -274,6 +283,7 @@ dface_t;
 
 // leaf 0 is the generic CONTENTS_SOLID leaf, used for all solid areas
 // all other leafs need visibility info
+
 typedef struct
 {
     int             contents;
@@ -285,7 +295,8 @@ typedef struct
     unsigned int  firstmarksurface;
     unsigned int  nummarksurfaces;
 
-    byte            ambient_level[NUM_AMBIENTS];
+	unsigned int  firstleafbrush;
+    unsigned int  numleafbrushes;
 }
 dleaf_t;
 
@@ -410,6 +421,32 @@ struct dlightgridsample_t
     int rawsampleoffset;
 };
 
+struct dbrushside_t
+{
+    dbrushside_t():
+        planenum(0),
+        texinfo(0),
+        flags(0)
+    {}
+
+    int planenum;
+    int texinfo;
+    int flags;
+};
+
+struct dbrush_t
+{
+    dbrush_t():
+        firstside(0),
+        numsides(0),
+        contents(0)
+    {}
+
+    int firstside;
+    int numsides;
+    int contents;
+};
+
 //============================================================================
 
 #define ANGLE_UP    -1.0 //#define ANGLE_UP    -1 //--vluzacn
@@ -522,6 +559,18 @@ extern int      g_dmarksurfaces_checksum;
 extern int      g_numsurfedges;
 extern int      g_dsurfedges[MAX_MAP_SURFEDGES];
 extern int      g_dsurfedges_checksum;
+
+extern int      g_numbrushes;
+extern dbrush_t g_dbrushes[MAX_MAP_BRUSHES];
+extern int      g_dbrushes_checksum;
+
+extern int      g_numbrushsides;
+extern dbrushside_t g_dbrushsides[MAX_MAP_BRUSHSIDES];
+extern int      g_dbrushsides_checksum;
+
+extern int      g_numleafbrushes;
+extern unsigned int g_dleafbrushes[MAX_MAP_LEAFBRUSHES];
+extern int      g_dleafbrushes_checksum;
 
 extern void     DecompressVis(const byte* src, byte* const dest, const unsigned int dest_length);
 extern int      CompressVis(const byte* const src, const unsigned int src_length, byte* dest, unsigned int dest_length);

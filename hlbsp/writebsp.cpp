@@ -12,6 +12,12 @@
 
 #include <map>
 
+extern brush_t g_mapbrushes[MAX_MAP_BRUSHES];
+extern int g_nummapbrushes;
+
+extern side_t g_mapbrushsides[MAX_MAP_BRUSHSIDES];
+extern int g_nummapbrushsides;
+
 typedef std::map< int, int > PlaneMap;
 static PlaneMap gPlaneMap;
 static int gNumMappedPlanes;
@@ -35,7 +41,7 @@ inline clipnodemap_t::key_type MakeKey (const dclipnode_t &c)
 //  WritePlane
 //  hook for plane optimization
 // =====================================================================================
-static int WritePlane(int planenum)
+int WritePlane(int planenum)
 {
 	planenum = planenum & (~1);
 
@@ -219,6 +225,7 @@ static int		WriteDrawLeaf (node_t *node, const node_t *portalleaf)
 		VectorCopy (node->mins, mins);
 		VectorCopy (node->maxs, maxs);
 	}
+
 	for (int k = 0; k < 3; k++)
 	{
 		leaf_p->mins[k] = (short)qmax (-32767, qmin ((int)mins[k], 32767));
@@ -226,6 +233,40 @@ static int		WriteDrawLeaf (node_t *node, const node_t *portalleaf)
 	}
 
     leaf_p->visofs = -1;                                   // no vis info yet
+
+	//
+	// write brushes
+	//
+	if(node->pleafbrushes)
+	{
+		leaf_p->firstleafbrush = g_numleafbrushes;
+		for (leafbrushref_s* b = node->pleafbrushes; b; b = b->pnext) 
+		{
+			if (g_numleafbrushes >= MAX_MAP_LEAFBRUSHES)
+				Error("Exceeded MAX_MAP_LEAFBRUSHES_QBSP");
+
+			int brushnum = b->pbrush - g_mapbrushes;
+			b->pbrush->assigned = true;
+
+			int i;
+			for (i = leaf_p->firstleafbrush; i < g_numleafbrushes; i++)
+			{
+				if (g_dleafbrushes[i] == brushnum)
+					break;
+			}
+
+			if (i == g_numleafbrushes) {
+				g_dleafbrushes[g_numleafbrushes] = brushnum;
+				g_numleafbrushes++;
+			}
+		}
+		leaf_p->numleafbrushes = g_numleafbrushes - leaf_p->firstleafbrush;
+	}
+	else
+	{
+		leaf_p->firstleafbrush = 0;
+		leaf_p->numleafbrushes = 0;
+	}
 
     //
     // write the marksurfaces
@@ -324,6 +365,51 @@ static void     WriteFace(face_t* f)
     }
 	free (f->outputedges);
 	f->outputedges = NULL;
+}
+
+// =====================================================================================
+//  AddBrushToLeaf
+// =====================================================================================
+void AddBrushToLeaf( brush_t* pbrush, node_t* pnode )
+{
+	if ((pnode->isportalleaf && pnode->contents == CONTENTS_SOLID) || pnode->iscontentsdetail)
+		return;
+
+	leafbrushref_t* pnew = new leafbrushref_t;
+	pnew->pnext = pnode->pleafbrushes;
+	pnew->pbrush = pbrush->original;
+	pnode->pleafbrushes = pnew;
+}
+
+// =====================================================================================
+//  SplitBrushToLeaves
+// =====================================================================================
+void SplitBrushToLeaves( brush_t* pbrush, node_t* pnode )
+{
+    if(!pbrush)
+        return;
+
+    if(!pbrush->sides)
+        return;
+
+    if(pnode->planenum == PLANENUM_LEAF)
+    {
+        if(pnode->contents != CONTENTS_SOLID)
+            AddBrushToLeaf(pbrush, pnode);
+
+		FreeBrush(pbrush);
+        return;
+    }
+
+	brush_t* pfront = nullptr;
+	brush_t* pback = nullptr;
+	SplitBrush(pbrush, pnode->planenum, &pfront, &pback);
+
+	if(pfront)
+		SplitBrushToLeaves(pfront, pnode->children[0]);
+
+	if(pback)
+		SplitBrushToLeaves(pback, pnode->children[1]);
 }
 
 // =====================================================================================
@@ -554,6 +640,178 @@ void            WriteDrawNodes(node_t* headnode)
 	WriteDrawNodes_r (headnode, NULL);
 }
 
+/*
+============
+FindPlane
+============
+*/
+#define DIST_EPSILON   0.04
+int FindIntPlane(vec3_t& normal, vec_t dist) 
+{
+	int i = 0;
+	for(; i < g_numplanes; i++)
+	{
+		vec_t t;
+		if(	-DIR_EPSILON < (t = normal[0] - g_mapplanes[i].normal[0]) && t < DIR_EPSILON &&
+			-DIR_EPSILON < (t = normal[1] - g_mapplanes[i].normal[1]) && t < DIR_EPSILON &&
+			-DIR_EPSILON < (t = normal[2] - g_mapplanes[i].normal[2]) && t < DIR_EPSILON )
+		{
+			t = dist - g_mapplanes[i].dist;
+			if (-DIST_EPSILON < t && t < DIST_EPSILON)
+				return i; 
+		}
+	}
+
+	int firstindex = g_numplanes;
+	plane_t* pfirst = &g_mapplanes[g_numplanes];
+	g_numplanes++;
+
+	pfirst->dist = dist;
+	VectorCopy(normal, pfirst->normal);
+
+	pfirst->type = PlaneTypeForNormal(pfirst->normal);
+	if (pfirst->type <= last_axial)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			if (j == pfirst->type)
+				pfirst->normal[j] = pfirst->normal[j] > 0 ? 1: -1;
+			else
+				pfirst->normal[j] = 0;
+		}
+	}
+
+	int secondindex = g_numplanes;
+	plane_t* psecond = &g_mapplanes[g_numplanes];
+	g_numplanes++;
+
+	psecond->dist = -dist;
+	VectorScale(normal, -1, psecond->normal);
+
+	psecond->type = PlaneTypeForNormal(psecond->normal);
+	if (psecond->type <= last_axial)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			if (j == psecond->type)
+				psecond->normal[j] = psecond->normal[j] > 0 ? 1: -1;
+			else
+				psecond->normal[j] = 0;
+		}
+	}
+
+    // always put axial planes facing positive first
+	int returnval;
+	if (normal[(psecond->type)%3] < 0)
+	{
+		plane_t temp = *pfirst;
+		*pfirst = *psecond;
+		*psecond = temp;
+        returnval = secondindex;
+	}
+	else
+	{ 
+		returnval = firstindex; 
+	}
+
+	return returnval;
+}
+
+/*
+============
+WriteBrushes
+============
+*/
+void WriteBrushes( void ) 
+{
+    int32_t bnum, s, x;
+    dbrush_t *db;
+    brush_t *b;
+    vec3_t normal;
+    vec_t dist;
+
+    g_numbrushsides = 0;
+    g_numbrushes    = g_nummapbrushes;
+
+    for (bnum = 0; bnum < g_nummapbrushes; bnum++) 
+    {
+        b             = &g_mapbrushes[bnum];
+        db            = &g_dbrushes[bnum];
+
+        db->contents  = b->contents;
+        db->firstside = g_numbrushsides;
+        db->numsides  = 0;
+
+        side_t* next = b->sides;
+        while(next)
+        {
+            dbrushside_t *cp;
+            if (g_numbrushsides == MAX_MAP_BRUSHSIDES)
+                Error("Exceeded MAX_MAP_BRUSHSIDES");
+
+            cp = &g_dbrushsides[g_numbrushsides];
+            g_numbrushsides++;
+
+			plane_t* pplane = &g_mapplanes[next->planenum];
+            cp->planenum = WritePlane(next->planenum);
+            cp->texinfo  = WriteTexinfo(next->texinfo);
+			cp->flags = 0;
+
+			if(next->planenum & 1)
+				cp->flags |= BSIDE_FL_PLANEBACK;
+
+			if(next->bevel)
+				cp->flags |= BSIDE_FL_BEVEL;
+
+            db->numsides++;
+            next = next->next;
+        }
+
+        // add any axis planes not contained in the brush to bevel off corners
+        for (x = 0; x < 3; x++)
+        {
+            for (s = -1; s <= 1; s += 2) 
+            {
+                // add the plane
+                VectorCopy(vec3_origin, normal);
+                normal[x] = s;
+                if (s == -1)
+                    dist = -b->mins[x];
+                else
+                    dist = b->maxs[x];
+
+				side_t* next = b->sides;
+				while(next)
+				{
+					plane_t* pplane = &g_mapplanes[next->planenum];
+					if(DotProduct(pplane->normal, normal) > 0.99999 && fabs(pplane->dist - dist) < ON_EPSILON)
+						break;
+
+					next = next->next;
+				}
+
+                if (next == nullptr) 
+				{
+                    if (g_numbrushsides >= MAX_MAP_BRUSHSIDES)
+                        Error("MAX_MAP_BRUSHSIDES");
+
+					dbrushside_t *prev = &g_dbrushsides[db->firstside];
+					dbrushside_t *cp = &g_dbrushsides[g_numbrushsides];
+                    g_numbrushsides++;
+                    db->numsides++;
+
+					int planenum = FindIntPlane(normal, dist);
+                    cp->planenum = WritePlane(planenum);
+                    cp->texinfo  = prev->texinfo;
+					cp->flags = BSIDE_FL_BEVEL;
+
+					if(planenum & 1)
+						cp->flags |= BSIDE_FL_PLANEBACK;
+                }
+            }
+        }
+    }
+}
 
 // =====================================================================================
 //  BeginBSPFile

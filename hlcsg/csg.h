@@ -5,6 +5,8 @@
 #pragma once
 #endif
 
+#define RECKONING_TOOLS
+
 #pragma warning(disable: 4786)	// identifier was truncated to '255' characters in the browser information
 #include <deque>
 #include <string>
@@ -73,6 +75,9 @@
 
 #define MAX_HULLSHAPES 128 // arbitrary
 
+
+extern int c_facecount;
+
 typedef struct
 {
     vec3_t          normal;
@@ -118,6 +123,13 @@ typedef struct side_s
     brush_texture_t td;
 	bool			bevel;
     vec_t           planepts[3][3];
+    bool            treatasskip;
+
+    // Changes for brush collisions
+    int             texinfo;
+    int             planenum;
+    bool            brushbevel;
+    Winding*        ptempwinding;
 } side_t;
 
 typedef struct bface_s
@@ -132,6 +144,8 @@ typedef struct bface_s
     int             backcontents;
 	bool			bevel; //used for ExpandBrush
     BoundingBox     bounds;
+    bool            treatasskip;
+    int             facenum;
 } bface_t;
 
 // NUM_HULLS should be no larger than MAX_MAP_HULLS
@@ -165,6 +179,10 @@ typedef struct brush_s
 
     int             contents;
     brushhull_t     hulls[NUM_HULLS];
+    side_t *        original_sides;
+
+    vec3_t          mins;
+    vec3_t          maxs;
 } brush_t;
 
 typedef struct
@@ -220,8 +238,8 @@ extern brush_t  g_mapbrushes[MAX_MAP_BRUSHES];
 
 #define MAX_MAP_SIDES   (MAX_MAP_BRUSHES*6)
 
-extern int      g_numbrushsides;
-extern side_t   g_brushsides[MAX_MAP_SIDES];
+extern int      g_nummapbrushsides;
+extern side_t   g_mapbrushsides[MAX_MAP_SIDES];
 
 extern hullshape_t g_defaulthulls[NUM_HULLS];
 extern int		g_numhullshapes;
@@ -229,6 +247,9 @@ extern hullshape_t g_hullshapes[MAX_HULLSHAPES];
 
 extern void     TextureAxisFromPlane(const plane_t* const pln, vec3_t xv, vec3_t yv);
 extern void     LoadMapFile(const char* const filename);
+
+extern int      FindIntPlane(const vec_t* const normal, const vec_t* const origin);
+extern int      PlaneFromPoints(const vec_t* const p0, const vec_t* const p1, const vec_t* const p2);
 
 //=============================================================================
 // textures.c

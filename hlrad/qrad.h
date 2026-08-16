@@ -589,13 +589,15 @@ extern void     PairEdges();
 #define SKYLEVEL_SOFTSKYOFF 4
 #define SKYLEVEL_SOFTSKYFAST 3
 #define SUNSPREAD_SKYLEVEL 7
+#define SKYLEVEL_CHEAP 1
 #define SUNSPREAD_THRESHOLD 15.0
 
 enum softskymode_t
 {
 	SOFTSKY_MINIMAL = 0,
 	SOFTSKY_OFF,
-	SOFTSKY_ON
+	SOFTSKY_ON,
+	SOFTSKY_CHEAP
 };
 
 extern int		g_numskynormals[SKYLEVELMAX+1]; // 0, 6, 18, 66, 258, 1026, 4098, 16386, 65538
@@ -610,9 +612,9 @@ extern void		ScaleDirectLights (); // run before AddPatchLights
 extern void		CreateFacelightDependencyList (); // run before AddPatchLights
 extern void		AddPatchLights (int facenum);
 extern void		FreeFacelightDependencyList ();
-extern int      TestLine(const vec3_t start, const vec3_t stop
-						 , vec_t *skyhitout = NULL
-						 );
+extern int      TestLine(const vec3_t start, const vec3_t stop, vec_t *skyhitout = NULL);
+extern int      TestLine(const vec3_t start, const vec3_t stop, vec_t *skyhit, vec_t* hitpos);
+
 #define OPAQUE_NODE_INLINECALL
 #ifdef OPAQUE_NODE_INLINECALL
 typedef struct

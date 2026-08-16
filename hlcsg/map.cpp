@@ -5,8 +5,8 @@
 int             g_nummapbrushes;
 brush_t         g_mapbrushes[MAX_MAP_BRUSHES];
 
-int             g_numbrushsides;
-side_t          g_brushsides[MAX_MAP_SIDES];
+int             g_nummapbrushsides;
+side_t          g_mapbrushsides[MAX_MAP_SIDES];
 
 int             g_nMapFileVersion;
 
@@ -32,10 +32,31 @@ brush_t *CopyCurrentBrush (entity_t *entity, const brush_t *brush)
 	g_nummapbrushes++;
 	hlassume (g_nummapbrushes <= MAX_MAP_BRUSHES, assume_MAX_MAP_BRUSHES);
 	memcpy (newb, brush, sizeof (brush_t));
-	newb->firstside = g_numbrushsides;
-	g_numbrushsides += brush->numsides;
-	hlassume (g_numbrushsides <= MAX_MAP_SIDES, assume_MAX_MAP_SIDES);
-	memcpy (&g_brushsides[newb->firstside], &g_brushsides[brush->firstside], brush->numsides * sizeof (side_t));
+	newb->firstside = g_nummapbrushsides;
+	newb->original_sides = &g_mapbrushsides[newb->firstside];
+	g_nummapbrushsides += brush->numsides;
+	hlassume (g_nummapbrushsides <= MAX_MAP_SIDES, assume_MAX_MAP_SIDES);
+
+	for(int i = 0; i < brush->numsides; i++)
+	{
+		side_t* psrc = &g_mapbrushsides[brush->firstside + i];
+		side_t* pdest = &g_mapbrushsides[newb->firstside + i];
+
+		pdest->bevel = psrc->bevel;
+		pdest->brushbevel = psrc->brushbevel;
+		pdest->planenum = psrc->planenum;
+		pdest->td = psrc->td;
+		pdest->texinfo = psrc->texinfo;
+		pdest->treatasskip = psrc->treatasskip;
+
+		if(psrc->ptempwinding)
+			pdest->ptempwinding = new Winding(*psrc->ptempwinding);
+		else
+			pdest->ptempwinding = nullptr;
+
+		memcpy(pdest->planepts, psrc->planepts, sizeof(side_t::planepts));
+	}
+
 	newb->entitynum = entity - g_entities;
 	newb->brushnum = entity->numbrushes;
 	entity->numbrushes++;
@@ -65,14 +86,14 @@ void DeleteCurrentEntity (entity_t *entity)
 	for (int i = entity->numbrushes - 1; i >= 0; i--)
 	{
 		brush_t *b = &g_mapbrushes[entity->firstbrush + i];
-		if (b->firstside + b->numsides != g_numbrushsides)
+		if (b->firstside + b->numsides != g_nummapbrushsides)
 		{
 			Error ("DeleteCurrentEntity: internal error. (Entity %i, Brush %i)",
 				b->originalentitynum, b->originalbrushnum
 				);
 		}
-		memset (&g_brushsides[b->firstside], 0, b->numsides * sizeof (side_t));
-		g_numbrushsides -= b->numsides;
+		memset (&g_mapbrushsides[b->firstside], 0, b->numsides * sizeof (side_t));
+		g_nummapbrushsides -= b->numsides;
 		for (int h = 0; h < NUM_HULLS; h++)
 		{
 			if (b->hullshapes[h])
@@ -141,6 +162,272 @@ static bool CheckForInvisible(entity_t* mapent)
 
 	return false;
 }
+
+/*
+================
+MakeBrushWindings
+
+makes basewindigs for sides and mins / maxs for the brush
+================
+*/
+void MakeBrushWindings(brush_t *ob) 
+{
+    int i, j;
+    side_t *side;
+    plane_t *plane;
+
+	VectorFill(ob->mins, MAX_FLOAT_VALUE);
+	VectorFill(ob->maxs, -MAX_FLOAT_VALUE);
+
+    for (i = 0; i < ob->numsides; i++) 
+	{
+        plane = &g_mapplanes[ob->original_sides[i].planenum];
+        Winding* w = new Winding(plane->normal, plane->dist);
+
+        for (j = 0; j < ob->numsides && w; j++) 
+		{
+            if (i == j)
+                continue;
+
+            if (ob->original_sides[j].brushbevel)
+                continue;
+
+            plane = &g_mapplanes[ob->original_sides[j].planenum ^ 1];
+			w->Chop(plane->normal, plane->dist, 0);
+        }
+
+        side = &ob->original_sides[i];
+		if(side->ptempwinding)
+			delete side->ptempwinding;
+
+		side->ptempwinding = w;
+
+        if (w) 
+		{
+            for (j = 0; j < w->m_NumPoints; j++)
+			{
+				for(int k = 0; k < 3; k++)
+				{
+					if(ob->mins[k] > w->m_Points[j][k])
+						ob->mins[k] = w->m_Points[j][k];
+
+					if(ob->maxs[k] < w->m_Points[j][k])
+						ob->maxs[k] = w->m_Points[j][k];
+				}
+			}
+        }
+    }
+}
+
+/*
+==============
+SnapVector
+==============
+*/
+void SnapVector(vec3_t& normal) 
+{
+    int32_t i;
+
+    for (i = 0; i < 3; i++) {
+        if (fabs(normal[i] - 1) < NORMAL_EPSILON) 
+		{
+            VectorClear(normal);
+            normal[i] = 1;
+            break;
+        }
+
+        if (fabs(normal[i] - -1) < NORMAL_EPSILON) 
+		{
+            VectorClear(normal);
+            normal[i] = -1;
+            break;
+        }
+    }
+}
+
+/*
+================
+PlaneEqual
+================
+*/
+
+#define DIST_EPSILON 0.01
+bool PlaneEqual(plane_t *p, vec3_t normal, vec_t dist) {
+    if (fabs(p->normal[0] - normal[0]) < NORMAL_EPSILON && fabs(p->normal[1] - normal[1]) < NORMAL_EPSILON && fabs(p->normal[2] - normal[2]) < NORMAL_EPSILON && fabs(p->dist - dist) < DIST_EPSILON)
+        return true;
+	else
+		return false;
+}
+
+
+/*
+=================
+AddBrushBevels
+
+Adds any additional planes necessary to allow the brush to be expanded
+against axial bounding boxes
+=================
+*/
+static void AddBrushBevels(brush_t *b) 
+{
+    int axis, dir;
+    int i, j, k, l, order;
+    side_t sidetemp;
+    side_t *s, *s2;
+    vec3_t normal;
+    vec_t dist;
+    Winding *w, *w2;
+    vec3_t vec, vec2;
+    vec_t d;
+
+    //
+    // add the axial planes
+    //
+    order = 0;
+    for (axis = 0; axis < 3; axis++) 
+	{
+        for (dir = -1; dir <= 1; dir += 2, order++) 
+		{
+            // see if the plane is allready present
+            for (i = 0, s = b->original_sides; i < b->numsides; i++, s++) 
+			{
+                if (g_mapplanes[s->planenum].normal[axis] == dir)
+                    break;
+            }
+
+            if (i == b->numsides) 
+			{
+                // add a new side
+                if (g_nummapbrushsides == MAX_MAP_BRUSHSIDES)
+                    Error("Exceeded MAX_MAP_BRUSHSIDES");
+
+                g_nummapbrushsides++;
+                b->numsides++;
+
+                VectorClear(normal);
+                normal[axis] = dir;
+                if (dir == 1)
+                    dist = b->maxs[axis];
+                else
+                    dist = -b->mins[axis];
+
+				vec3_t origin;
+				VectorScale(normal, dist, origin);
+
+                s->planenum = FindIntPlane(normal, origin);
+                s->texinfo  = b->original_sides[0].texinfo;
+				s->td = b->original_sides[0].td;
+                s->brushbevel = true;
+            }
+
+            // if the plane is not in it canonical order, swap it
+            if (i != order) 
+			{
+                sidetemp = b->original_sides[order];
+                b->original_sides[order] = b->original_sides[i];
+                b->original_sides[i] = sidetemp;
+            }
+        }
+    }
+
+    //
+    // add the edge bevels
+    //
+    if (b->numsides == 6)
+        return; // pure axial
+
+    // test the non-axial plane edges
+    for (i = 6; i < b->numsides; i++) 
+	{
+        s = b->original_sides + i;
+		if(s->brushbevel)
+			continue;
+
+        w = s->ptempwinding;
+        if (!w)
+            continue;
+
+        for (j = 0; j < w->m_NumPoints; j++) 
+		{
+            k = (j + 1) % w->m_NumPoints;
+            VectorSubtract(w->m_Points[j], w->m_Points[k], vec);
+            if (VectorNormalize(vec) < 0.5)
+                continue;
+
+            SnapVector(vec);
+            for (k = 0; k < 3; k++)
+			{
+                if (vec[k] == -1 || vec[k] == 1)
+                    break; // axial
+			}
+
+            if (k != 3)
+                continue; // only test non-axial edges
+
+            // try the six possible slanted axials from this edge
+            for (axis = 0; axis < 3; axis++) 
+			{
+                for (dir = -1; dir <= 1; dir += 2) 
+				{
+                    // construct a plane
+                    VectorClear(vec2);
+                    vec2[axis] = dir;
+                    CrossProduct(vec, vec2, normal);
+                    if (VectorNormalize(normal) < 0.5)
+                        continue;
+
+                    dist = DotProduct(w->m_Points[j], normal);
+
+                    // if all the points on all the sides are
+                    // behind this plane, it is a proper edge bevel
+                    for (k = 0; k < b->numsides; k++) 
+					{
+                        // if this plane has allready been used, skip it
+                        if (PlaneEqual(&g_mapplanes[b->original_sides[k].planenum], normal, dist))
+                            break;
+
+                        w2 = b->original_sides[k].ptempwinding;
+                        if (!w2)
+                            continue;
+
+                        for (l = 0; l < w2->m_NumPoints; l++) 
+						{
+                            d = DotProduct(w2->m_Points[l], normal) - dist;
+                            if (d > 0.1)
+                                break; // point in front
+                        }
+
+                        if (l != w2->m_NumPoints)
+                            break;
+                    }
+
+                    if (k != b->numsides)
+                        continue; // wasn't part of the outer hull
+
+                    // add this plane
+                    if (g_nummapbrushsides == MAX_MAP_BRUSHSIDES)
+                        Error("Exceeded MAX_MAP_BRUSHSIDES");
+
+                    g_nummapbrushsides++;
+
+					vec3_t origin;
+					VectorScale(normal, dist, origin);
+
+                    s2 = &b->original_sides[b->numsides];
+                    s2->planenum = FindIntPlane(normal, origin);
+                    s2->texinfo = b->original_sides[0].texinfo;
+					s2->td = b->original_sides[0].td;
+                    s2->brushbevel = true;
+
+                    b->numsides++;
+                }
+            }
+        }
+    }
+
+	return;
+}
+
 // =====================================================================================
 //  ParseBrush
 //      parse a brush from script
@@ -157,11 +444,12 @@ static void ParseBrush(entity_t* mapent)
 
     b = &g_mapbrushes[g_nummapbrushes];
     g_nummapbrushes++;
-    b->firstside = g_numbrushsides;
+    b->firstside = g_nummapbrushsides;
 	b->originalentitynum = g_numparsedentities;
 	b->originalbrushnum = g_numparsedbrushes;
     b->entitynum = g_numentities - 1;
     b->brushnum = g_nummapbrushes - mapent->firstbrush - 1;
+	b->original_sides = &g_mapbrushsides[g_nummapbrushsides];
 
     b->noclip = 0;
 	if (IntForKey(mapent, "zhlt_noclip"))
@@ -231,13 +519,13 @@ static void ParseBrush(entity_t* mapent)
             break;
         }
 
-        hlassume(g_numbrushsides < MAX_MAP_SIDES, assume_MAX_MAP_SIDES);
-        side = &g_brushsides[g_numbrushsides];
-        g_numbrushsides++;
-
-        b->numsides++;
+        hlassume(g_nummapbrushsides < MAX_MAP_SIDES, assume_MAX_MAP_SIDES);
+        side = &g_mapbrushsides[g_nummapbrushsides];
 
 		side->bevel = false;
+		side->brushbevel = false;
+		side->treatasskip = false;
+
         // read the three point plane definition
         for (i = 0; i < 3; i++)
         {
@@ -289,6 +577,7 @@ static void ParseBrush(entity_t* mapent)
 			if (!strncasecmp (g_token, "CLIP", 4))
 			{
 				b->cliphull |= (1 << NUM_HULLS); // arbitrary nonexistent hull
+
 				int h;
 				if (!strncasecmp (g_token, "CLIPHULL", 8) && (h = g_token[8] - '0', 0 < h && h < NUM_HULLS))
 				{
@@ -302,7 +591,8 @@ static void ParseBrush(entity_t* mapent)
 				{
 					b->bevel = true;
 				}
-				strcpy (g_token, "SKIP");
+
+				side->treatasskip = true;
 			}
 		}
         safe_strncpy(side->td.name, g_token, sizeof(side->td.name));
@@ -431,8 +721,57 @@ static void ParseBrush(entity_t* mapent)
             side->td.vects.quark.vects[1][3] = -DotProduct(side->td.vects.quark.vects[1], side->planepts[0]);
         }
 
+        //
+        // find the plane number
+        //
+        int planenum = PlaneFromPoints(side->planepts[0], side->planepts[1], side->planepts[2]);
+        if (planenum == -1)
+        {
+            Fatal(assume_PLANE_WITH_NO_NORMAL, "Entity %i, Brush %i, Side %i: plane with no normal", 
+				b->originalentitynum, b->originalbrushnum
+				, i);
+        }
+		
+		//
+        // see if the plane has been used already
+        //
+        for (int k = 0; k < b->numsides; k++) 
+		{
+            side_t* s2 = b->original_sides + k;
+            if (s2->planenum == planenum || s2->planenum == (planenum ^ 1))
+            {
+                Fatal(assume_BRUSH_WITH_COPLANAR_FACES, "Entity %i, Brush %i, Side %i: has a coplanar plane at (%.0f, %.0f, %.0f), texture %s",
+					b->originalentitynum, b->originalbrushnum, i, side->planepts[0][0], side->planepts[0][1], side->planepts[0][2], side->td.name);
+            }
+        }
+
+		side->planenum = planenum;
         side->td.txcommand = g_TXcommand;                  // Quark stuff, but needs setting always
+		side->texinfo = TexinfoForBrushTexture(&g_mapplanes[planenum], &side->td, vec3_origin);
+
+        g_nummapbrushsides++;
+        b->numsides++;
     };
+
+	// Create windings temporarily, for brush bevel creation
+	MakeBrushWindings(b);
+
+#ifdef RECKONING_TOOLS
+	if (!g_onlyents)
+	{
+		// Now create the bevel sides, but only for non-clip economy entities and entities without zhlt_noclip set to 1
+		if(strcmpi(ValueForKey(mapent, "classname"), "func_detail") != 0 && IntForKey(mapent, "zhlt_noclip") == 0)
+			AddBrushBevels(b);
+	}
+#else
+	if (!g_onlyents)
+	{
+		// Now create the bevel sides, but only for non-clip economy entities and entities without zhlt_noclip set to 1
+		if(strcmpi(ValueForKey(mapent, "classname"), "func_clipeconomy") != 0 && IntForKey(mapent, "zhlt_noclip") == 0)
+			AddBrushBevels(b);
+	}
+#endif
+
 	if (b->cliphull != 0) // has CLIP* texture
 	{
 		unsigned int mask_anyhull = 0;
@@ -449,9 +788,14 @@ static void ParseBrush(entity_t* mapent)
     b->contents = contents = CheckBrushContents(b);
 	for (j = 0; j < b->numsides; j++)
 	{
-		side = &g_brushsides[b->firstside + j];
-		if(nullify && strncasecmp(side->td.name,"BEVEL",5) && strncasecmp(side->td.name,"ORIGIN",6)
-			&& strncasecmp(side->td.name,"HINT",4) && strncasecmp(side->td.name,"SKIP",4)
+		side = &g_mapbrushsides[b->firstside + j];
+		// Unless it's the listed textures above, replace texture with "null"
+		if(nullify 
+			&& strncasecmp(side->td.name,"BEVEL",5) 
+			&& strncasecmp(side->td.name,"ORIGIN",6)
+			&& strncasecmp(side->td.name,"HINT",4) 
+			&& (strncasecmp(side->td.name,"SKIP",4) && !side->treatasskip) 
+			&& strncasecmp(side->td.name,"CLIP",4)
 			&& strncasecmp(side->td.name,"SOLIDHINT",9)
 			&& strncasecmp(side->td.name,"SPLITFACE",9)
 			&& strncasecmp(side->td.name,"BOUNDINGBOX",11)
@@ -464,25 +808,21 @@ static void ParseBrush(entity_t* mapent)
 	for (j = 0; j < b->numsides; j++)
 	{
 		// change to SKIP now that we have set brush content.
-		side = &g_brushsides[b->firstside + j];
+		side = &g_mapbrushsides[b->firstside + j];
 		if (!strncasecmp (side->td.name, "SPLITFACE", 9))
-		{
-			strcpy (side->td.name, "SKIP");
-		}
+			side->treatasskip = true;
 	}
 	for (j = 0; j < b->numsides; j++)
 	{
-		side = &g_brushsides[b->firstside + j];
+		side = &g_mapbrushsides[b->firstside + j];
 		if (!strncasecmp (side->td.name, "CONTENT", 7))
-		{
-			strcpy (side->td.name, "NULL");
-		}
+			side->treatasskip = true;
 	}
 	if (g_nullifytrigger)
 	{
 		for (j = 0; j < b->numsides; j++)
 		{
-			side = &g_brushsides[b->firstside + j];
+			side = &g_mapbrushsides[b->firstside + j];
 			if (!strncasecmp (side->td.name, "AAATRIGGER", 10))
 			{
 				strcpy (side->td.name, "NULL");
@@ -527,8 +867,8 @@ static void ParseBrush(entity_t* mapent)
     }
 	if (*ValueForKey (&g_entities[b->entitynum], "zhlt_usemodel"))
 	{
-		memset (&g_brushsides[b->firstside], 0, b->numsides * sizeof (side_t));
-		g_numbrushsides -= b->numsides;
+		memset (&g_mapbrushsides[b->firstside], 0, b->numsides * sizeof (side_t));
+		g_nummapbrushsides -= b->numsides;
 		for (int h = 0; h < NUM_HULLS; h++)
 		{
 			if (b->hullshapes[h])
@@ -594,7 +934,7 @@ static void ParseBrush(entity_t* mapent)
 		newb->cliphull = ~0;
 		for (j = 0; j < newb->numsides; j++)
 		{
-			side = &g_brushsides[newb->firstside + j];
+			side = &g_mapbrushsides[newb->firstside + j];
 			strcpy (side->td.name, "NULL");
 		}
 	}
@@ -604,12 +944,13 @@ static void ParseBrush(entity_t* mapent)
 		bool mixed = false;
 		for (j = 0; j < b->numsides; j++)
 		{
-			side = &g_brushsides[b->firstside + j];
+			side = &g_mapbrushsides[b->firstside + j];
+
+			// this is not supposed to be a HINT brush, so remove all invisible faces from hull 0.
 			if (!strncasecmp (side->td.name, "NULL", 4))
-			{ // this is not supposed to be a HINT brush, so remove all invisible faces from hull 0.
-				strcpy (side->td.name, "SKIP");
-			}
-			if (strncasecmp (side->td.name, "SKIP", 4))
+				side->treatasskip = true;
+
+			if (!side->treatasskip && strncasecmp (side->td.name, "SKIP", 4))
 				mixed = true;
 		}
 		if (mixed)
@@ -618,11 +959,6 @@ static void ParseBrush(entity_t* mapent)
 			newb->cliphull = 0;
 		}
 		b->contents = CONTENTS_SOLID;
-		for (j = 0; j < b->numsides; j++)
-		{
-			side = &g_brushsides[b->firstside + j];
-			strcpy (side->td.name, "NULL");
-		}
 	}
 
 }
@@ -754,7 +1090,7 @@ bool            ParseMapEntity()
 
 		if (ent_move_b || ent_scale_b || ent_gscale_b)
 		{
-			if (g_nMapFileVersion < 220 || g_brushsides[0].td.txcommand != 0)
+			if (g_nMapFileVersion < 220 || g_mapbrushsides[0].td.txcommand != 0)
 			{
 				Warning ("hlcsg scaling hack is not supported in Worldcraft 2.1- or QuArK mode");
 			}
@@ -766,7 +1102,7 @@ bool            ParseMapEntity()
 				vec_t *point;
 				for (ibrush = 0, brush = g_mapbrushes + mapent->firstbrush; ibrush < mapent->numbrushes; ++ibrush, ++brush)
 				{
-					for (iside = 0, side = g_brushsides + brush->firstside; iside < brush->numsides; ++iside, ++side)
+					for (iside = 0, side = g_mapbrushsides + brush->firstside; iside < brush->numsides; ++iside, ++side)
 					{
 						for (ipoint = 0; ipoint < 3; ++ipoint)
 						{
@@ -1009,6 +1345,7 @@ bool            ParseMapEntity()
 				classname, (double)ENGINE_ENTITY_RANGE, mapent->origin[0], mapent->origin[1], mapent->origin[2]);
 		}
 	}
+
     return true;
 }
 
@@ -1054,13 +1391,69 @@ unsigned int    CountEngineEntities()
 }
 
 // =====================================================================================
+//  CalculateEntityOrigin
+// =====================================================================================
+void CalculateEntityOrigin( entity_t* pmapent, vec3_t& outorigin, bool isparent )
+{
+	// If no origin is set, then set the center of the bbox
+	vec3_t entmins, entmaxs;
+	for(int j = 0; j < 3; j++)
+	{
+		entmins[j] = MAX_FLOAT_VALUE;
+		entmaxs[j] = -MAX_FLOAT_VALUE;
+	}
+
+	for(int j = 0; j < pmapent->numbrushes; j++)
+	{
+		brush_t* pbrush = &g_mapbrushes[pmapent->firstbrush + j];
+
+		for(int k = 0; k < pbrush->numsides; k++)
+		{
+			side_t* pside = &g_mapbrushsides[pbrush->firstside + k];
+			if(pside->bevel || !pside->ptempwinding)
+				continue;
+
+			Winding* w = pside->ptempwinding;
+			for(int l = 0; l < w->m_NumPoints; l++)
+			{
+				vec3_t& vertex = w->m_Points[l];
+				for(int m = 0; m < 3; m++)
+				{
+					if(vertex[m] < entmins[m])
+						entmins[m] = vertex[m];
+
+					if(vertex[m] > entmaxs[m])
+						entmaxs[m] = vertex[m];
+				}
+			}
+		}
+	}
+
+	vec3_t origin;
+    VectorAdd(entmins, entmaxs, origin);
+    VectorScale(origin, 0.5, origin);
+
+	char szValue[MAXTOKEN];
+    safe_snprintf(szValue, MAXTOKEN, "%lf %lf %lf", origin[0], origin[1], origin[2]);
+    SetKeyValue(pmapent, "origin", szValue);
+
+	VectorCopy(origin, pmapent->origin);
+	VectorCopy(origin, outorigin);
+
+	const char* pstrTargetname = ValueForKey(pmapent, "targetname");
+	if(pstrTargetname && strlen(pstrTargetname) > 0)
+		printf("%s entity of type '%s' with name '%s' had it's origin set at %.1f %.1f %.1f.\n", (isparent ? "Parent" : "Child"), ValueForKey(pmapent, "classname"), pstrTargetname, origin[0], origin[1], origin[2]);
+	else
+		printf("%s entity of type '%s' had it's origin set at %.1f %.1f %.1f.\n", (isparent ? "Parent" : "Child"), ValueForKey(pmapent, "classname"), origin[0], origin[1], origin[2]);
+}
+
+// =====================================================================================
 //  SetParentOffsets
 //      Go through all entities and check which ones have a parent. If they do, then
 //      set the offset from the parent origin
 // =====================================================================================
 void SetParentOffsets( void )
 {
-	char szValue[MAXTOKEN];
 	for(int i = 0; i < g_numentities; i++)
 	{
 		entity_t* pmapent = &g_entities[i];
@@ -1073,42 +1466,7 @@ void SetParentOffsets( void )
 		const char* pstrValue = ValueForKey (pmapent, "origin");
 		if(!pstrValue || !strlen(pstrValue))
 		{
-#if 1
-			Error("Parented entity %d with classname '%s' has no origin brush.\n", i, ValueForKey(pmapent, "classname"));
-#else
-			// If no origin is set, then set the center of the bbox
-			vec3_t entmins, entmaxs;
-			for(int j = 0; j < 3; j++)
-			{
-				entmins[j] = MAX_FLOAT_VALUE;
-				entmaxs[j] = -MAX_FLOAT_VALUE;
-			}
-
-			for(int j = 0; j < pmapent->numbrushes; j++)
-			{
-				brush_t* pbrush = &g_mapbrushes[pmapent->firstbrush + j];
-
-				int savedcontents = pbrush->contents;
-				pbrush->contents = CONTENTS_SOLID;
-				CreateBrush(pmapent->firstbrush + j);     // to get sizes
-				pbrush->contents = savedcontents;
-
-				for(int k = 0; k < 3; k++)
-				{
-					if(pbrush->hulls[0].bounds.m_Mins[k] < entmins[k])
-						entmins[k] = pbrush->hulls[0].bounds.m_Mins[k];
-
-					if(pbrush->hulls[0].bounds.m_Maxs[k] > entmaxs[k])
-						entmaxs[k] = pbrush->hulls[0].bounds.m_Maxs[k];
-				}
-			}
-
-            VectorAdd(entmins, entmaxs, entityorigin);
-            VectorScale(entityorigin, 0.5, entityorigin);
-
-            safe_snprintf(szValue, MAXTOKEN, "%lf %lf %lf", entityorigin[0], entityorigin[1], entityorigin[2]);
-            SetKeyValue(pmapent, "origin", szValue);
-#endif
+			CalculateEntityOrigin(pmapent, entityorigin, false);
 		}
 		else
 		{
@@ -1139,21 +1497,57 @@ void SetParentOffsets( void )
 			continue;
 		}
 
+		vec3_t parentorigin;
 		pstrValue = ValueForKey (pparentmapent, "origin");
 		if(!pstrValue || !strlen(pstrValue))
 		{
-			Error("Parent '%s' of entity %d with classname '%s' has no origin brush.\n", pstrParentName, i, ValueForKey(pmapent, "classname"));
-			continue;
+			CalculateEntityOrigin(pparentmapent, parentorigin, true);
 		}
-
-		vec3_t parentorigin;
-		sscanf(pstrValue, "%lf %lf %lf", &parentorigin[0], &parentorigin[1], &parentorigin[2]);
+		else
+		{
+			sscanf(pstrValue, "%lf %lf %lf", &parentorigin[0], &parentorigin[1], &parentorigin[2]);
+		}
 
 		vec3_t parentoffset;
 		VectorSubtract(entityorigin, parentorigin, parentoffset);
 
+		char szValue[MAXTOKEN];
 		sprintf(szValue, "%lf %lf %lf", parentoffset[0], parentoffset[1], parentoffset[2]);
 		SetKeyValue(pmapent, "parentoffset", szValue);
+	}
+}
+
+// =====================================================================================
+//  AdjustEntitiesWithOrigins
+// =====================================================================================
+void AdjustEntitiesWithOrigins( void )
+{
+	for(int i = 0; i < g_numentities; i++)
+	{
+		entity_t* mapent = &g_entities[i];
+
+		//
+		// if there was an origin brush, offset all of the planes and texinfo
+		//
+		if (mapent->origin[0] || mapent->origin[1] || mapent->origin[2]) 
+		{
+			for (int32_t i = 0; i < mapent->numbrushes; i++)
+			{
+				brush_t* b = &g_mapbrushes[mapent->firstbrush + i];
+				for (int32_t j = 0; j < b->numsides; j++) 
+				{
+					side_t *s = &b->original_sides[j];
+
+					vec3_t neworigin;
+					VectorSubtract(g_mapplanes[s->planenum].origin, mapent->origin, neworigin);
+					s->planenum = FindIntPlane(g_mapplanes[s->planenum].normal, neworigin);
+					s->texinfo = TexinfoForBrushTexture(&g_mapplanes[s->planenum], &s->td, mapent->origin);
+				}
+
+				if (!g_onlyents)
+					MakeBrushWindings(b);
+			}
+		}
 	}
 }
 
@@ -1174,11 +1568,10 @@ void            LoadMapFile(const char* const filename)
 
 	g_numparsedentities = 0;
     while (ParseMapEntity())
-    {
 		g_numparsedentities++;
-    }
 
 	SetParentOffsets();
+	AdjustEntitiesWithOrigins();
 
     // AJM debug
     /*

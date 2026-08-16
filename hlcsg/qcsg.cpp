@@ -28,12 +28,14 @@
 static FILE*    out[NUM_HULLS]; // pointer to each of the hull out files (.p0, .p1, ect.)  
 static FILE*    out_view[NUM_HULLS];
 static FILE*    out_detailbrush[NUM_HULLS];
+static FILE*    out_brush;
 static int      c_tiny;        
 static int      c_tiny_clip;
 static int      c_outfaces;
 static int      c_csgfaces;
 BoundingBox     world_bounds;
 
+int      c_facecount = 0;
 
 vec_t           g_tiny_threshold = DEFAULT_TINY_THRESHOLD;
      
@@ -265,6 +267,9 @@ bface_t*        NewFaceFromFace(const bface_t* const in)
     newf->planenum = in->planenum;
     newf->plane = in->plane;
 	newf->backcontents = in->backcontents;
+    newf->treatasskip = in->treatasskip;
+    newf->facenum = c_facecount;
+    c_facecount++;
 
     return newf;
 }
@@ -282,9 +287,7 @@ void            FreeFace(bface_t* f)
 // =====================================================================================
 //  WriteFace
 // =====================================================================================
-void            WriteFace(const int hull, const bface_t* const f
-						  , int detaillevel
-						  )
+void WriteFace(const int hull, const bface_t* const f, int detaillevel)
 {
     unsigned int    i;
     Winding*        w;
@@ -297,7 +300,7 @@ void            WriteFace(const int hull, const bface_t* const f
     w = f->w;
 
     // plane summary
-	fprintf (out[hull], "%i %i %i %i %u\n", detaillevel, f->planenum, f->texinfo, f->contents, w->m_NumPoints);
+	fprintf (out[hull], "%i %i %i %i %i %u\n", detaillevel, f->planenum, f->texinfo, f->contents, (int)f->treatasskip, w->m_NumPoints);
 
     // for each of the points on the face
     for (i = 0; i < w->m_NumPoints; i++)
@@ -334,20 +337,47 @@ void            WriteFace(const int hull, const bface_t* const f
 
     ThreadUnlock();
 }
-void WriteDetailBrush (int hull, const bface_t *faces)
+
+void WriteOriginalBrush (FILE* pfile, brush_t* pbrush)
 {
 	ThreadLock ();
-	fprintf (out_detailbrush[hull], "0\n");
+	fprintf (pfile, "%d\n", pbrush->contents);
+    for(int i = 0; i < pbrush->numsides; i++)
+	{
+        side_t* pside = &pbrush->original_sides[i];
+        if(!pside->brushbevel)
+        {
+            Winding *w = pside->ptempwinding;
+            fprintf (pfile, "%i %i 0 %u\n", pside->planenum, pside->texinfo, w->m_NumPoints);
+		    for (int i = 0; i < w->m_NumPoints; i++)
+			    fprintf (pfile, "%5.8f %5.8f %5.8f\n", w->m_Points[i][0], w->m_Points[i][1], w->m_Points[i][2]);
+
+           pside->ptempwinding = nullptr;
+           delete w;
+        }
+        else
+        {
+            fprintf (pfile, "%i %i 1 0\n", pside->planenum, pside->texinfo);
+        }
+	}
+	fprintf (pfile, "-1 -1 -1 -1\n");
+	ThreadUnlock ();
+}
+
+void WriteDetailBrush (FILE* pfile, brush_t* pbrush, const bface_t *faces)
+{
+	ThreadLock ();
+	fprintf (pfile, "%d\n", pbrush->contents);
 	for (const bface_t *f = faces; f; f = f->next)
 	{
 		Winding *w = f->w;
-		fprintf (out_detailbrush[hull], "%i %u\n", f->planenum, w->m_NumPoints);
+		fprintf (pfile, "%i %i %u\n", f->planenum, f->texinfo, w->m_NumPoints);
 		for (int i = 0; i < w->m_NumPoints; i++)
 		{
-			fprintf (out_detailbrush[hull], "%5.8f %5.8f %5.8f\n", w->m_Points[i][0], w->m_Points[i][1], w->m_Points[i][2]);
+			fprintf (pfile, "%5.8f %5.8f %5.8f\n", w->m_Points[i][0], w->m_Points[i][1], w->m_Points[i][2]);
 		}
 	}
-	fprintf (out_detailbrush[hull], "-1 -1\n");
+	fprintf (pfile, "-1 -1 -1\n");
 	ThreadUnlock ();
 }
 
@@ -396,8 +426,8 @@ static void     SaveOutside(const brush_t* const b, const int hull, bface_t* out
 		backnull = false;
 		if (mirrorcontents == CONTENTS_TOEMPTY)
 		{
-			if (strncasecmp (texname, "SKIP", 4) && strncasecmp (texname, "HINT", 4)
-				&& strncasecmp (texname, "SOLIDHINT", 9)
+			if ((strncasecmp (texname, "SKIP", 4) && !f->treatasskip) && strncasecmp (texname, "HINT", 4)
+				&& strncasecmp (texname, "SOLIDHINT", 9) && strncasecmp (texname, "CLIP", 9)
 				)
 				// SKIP and HINT are special textures for hlbsp
 			{
@@ -453,8 +483,8 @@ static void     SaveOutside(const brush_t* const b, const int hull, bface_t* out
 
 			if (texinfo != -1 // nullified textures (NULL, BEVEL, aaatrigger, etc.)
 				&& !(tex->flags & TEX_SPECIAL) // sky
-				&& strncasecmp (texname, "SKIP", 4) && strncasecmp (texname, "HINT", 4) // HINT and SKIP will be nullified only after hlbsp
-				&& strncasecmp (texname, "SOLIDHINT", 9)
+				&& (strncasecmp (texname, "SKIP", 4) && !f->treatasskip) && strncasecmp (texname, "HINT", 4) // HINT and SKIP will be nullified only after hlbsp
+				&& strncasecmp (texname, "SOLIDHINT", 9) && strncasecmp (texname, "CLIP", 9)
 				)
 			{
 				// check for "Malformed face (%d) normal"
@@ -636,6 +666,9 @@ static void     CSGBrush(int brushnum)
     b1 = &g_mapbrushes[brushnum];
     e = &g_entities[b1->entitynum];
 
+    // Write brush to output
+    WriteOriginalBrush (out_brush, b1);
+
     // for each of the hulls
     for (hull = 0; hull < NUM_HULLS; hull++)
     {
@@ -657,7 +690,7 @@ static void     CSGBrush(int brushnum)
 					ContentsToString((contents_t)b1->contents));
 				break;
 			case CONTENTS_SOLID:
-				WriteDetailBrush (hull, bh1->faces);
+				WriteDetailBrush (out_detailbrush[hull], b1, bh1->faces);
 				break;
 			}
 		}
@@ -738,8 +771,9 @@ static void     CSGBrush(int brushnum)
 					)
 				{
 					const char *texname = GetTextureByNumber_CSG (f->texinfo);
-					if (f->texinfo == -1 || !strncasecmp (texname, "SKIP", 4) || !strncasecmp (texname, "HINT", 4)
-						|| !strncasecmp (texname, "SOLIDHINT", 9)
+					if (f->texinfo == -1 
+                        || !(strncasecmp (texname, "SKIP", 4) && !f->treatasskip) || !strncasecmp (texname, "HINT", 4)
+						|| !strncasecmp (texname, "SOLIDHINT", 9) || !strncasecmp (texname, "CLIP", 9)
 						)
 					{
 						// should not nullify the fragment inside detail brush
@@ -1475,9 +1509,11 @@ static void     ProcessModels()
         // write end of model marker
         for (j = 0; j < NUM_HULLS; j++)
         {
-			fprintf (out[j], "-1 -1 -1 -1 -1\n");
-			fprintf (out_detailbrush[j], "-1\n");
+			fprintf (out[j], "-1 -1 -1 -1 -1 -1\n");
+			fprintf (out_detailbrush[j], "-255\n");
         }
+
+        fprintf (out_brush, "-255\n");
     }
 }
 
@@ -2353,6 +2389,11 @@ int             main(const int argc, char** argv)
         NamedRunThreadsOnIndividual(g_nummapbrushes, g_estimate, CalculateBrushUnions);
     }
 
+	safe_snprintf(name, _MAX_PATH, "%s.bc", g_Mapname, i);
+	out_brush = fopen(name, "w");
+	if (!out_brush)
+		Error("Couldn't open %s", name);
+
     // open hull files
     for (i = 0; i < NUM_HULLS; i++)
     {
@@ -2415,6 +2456,8 @@ int             main(const int argc, char** argv)
 			fclose (out_view[i]);
 		}
 	}
+
+    fclose(out_brush);
 
     EmitPlanes();
 

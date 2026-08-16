@@ -77,3 +77,11 @@
  - Implement new function required for parenting system in Pathos.
  - Optimize light grid and baked vertex lighting calculations using bitsets and less skylight calculations.
  - Fix light grid and baked vertex considering patches with extremely low attenuation values causing long compiles.
+
+2026 August 16th:
+ - Add Quake 2-style brush collision data generation.
+ - Inrease limits for max planes and internal planes.
+ - Fix baked vertex lighting bugs due to pitch not being reversed when calculating bone matrices.
+ - Fix baked vertex lighting distance epsilon issue causing incorrect positive traces against vbm models.
+ - Add auto origin generation for child and parent entities without an origin brush.
+ - Optimize light grid calculations on large open levels.

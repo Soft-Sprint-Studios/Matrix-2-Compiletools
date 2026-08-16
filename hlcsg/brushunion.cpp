@@ -156,6 +156,9 @@ static void     AddPlaneToUnion(brushhull_t* hull, const int planenum)
             new_face->w = new_winding;
 
             new_face->next = hull->faces;
+            new_face->facenum = c_facecount;
+            c_facecount++;
+
             hull->faces = new_face;
         }
     }

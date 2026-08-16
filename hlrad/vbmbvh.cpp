@@ -693,8 +693,8 @@ bool CVBMBVH::TestLineTriangleIntersect( bvhthreadinfo_t& threadinfo, const vec3
 		return false;
 
     const float t = f * DotProduct( edge2, q );
-	float tdiff = abs(t - threadinfo.distance);
-    if (t > 0.001f && tdiff > 0.001f && t < threadinfo.distance)
+	float tdiff = abs(t - threadinfo.distance) / threadinfo.basedistance;
+    if (t > 0.01f && tdiff > 0.01f && t < threadinfo.distance)
 	{
 		VectorMA(start, t, threadinfo.normdirection, impactPosition);
 		VectorCopy(ptriangle->normal, impactNormal);
